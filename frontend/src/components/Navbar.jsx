@@ -11,11 +11,11 @@ function Navbar() {
     if (!user) return "/login"
     switch (user.role) {
       case "admin":
-        return "/admin/dashboard"
+        return "/admin/assessments"
       case "instructor":
-        return "/instructor/dashboard"
+        return "/instructor/assessments"
       case "student":
-        return "/student/dashboard"
+        return "/student/assessments"
       default:
         return "/"
     }
@@ -31,15 +31,18 @@ function Navbar() {
     }
 
     const baseLinks = [
-      { name: "Dashboard", href: getDashboardLink() },
+      { name: "Assessments", href: getDashboardLink() },
       { name: "Profile", href: "/profile" },
     ]
 
     // Role-specific links
     if (user.role === "admin") {
-      baseLinks.splice(1, 0, { name: "Manage Users", href: "/admin/dashboard" })
+      baseLinks.splice(1, 0, { name: "Manage Users", href: "/admin/assessments" })
     } else if (user.role === "instructor") {
-      baseLinks.splice(1, 0, { name: "Add Student", href: "/instructor/add-student" })
+      baseLinks.splice(1, 0, { name: "Manage Students", href: "/instructor/students" })
+      baseLinks.splice(2, 0, { name: "My Assessments", href: "/instructor/assessments" })
+    } else if (user.role === "student") {
+      baseLinks.splice(1, 0, { name: "Available Assessments", href: "/student/assessments" })
     }
 
     return baseLinks
@@ -95,7 +98,7 @@ function Navbar() {
               <div className="flex items-center space-x-4 pl-4 border-l border-gray-200">
                 <div className="flex items-center space-x-2">
                   <div className="text-lg">
-                    {user.role === "admin" ? "👑" : user.role === "instructor" ? "��‍🏫" : "👨‍🎓"}
+                    {user.role === "admin" ? "👑" : user.role === "instructor" ? "📝" : "👨‍🎓"}
                   </div>
                   <div className="text-sm">
                     <div className="font-medium text-gray-900">{user.name}</div>
@@ -167,7 +170,7 @@ function Navbar() {
               <div className="pt-4 pb-3 border-t border-gray-200">
                 <div className="flex items-center px-3 mb-3">
                   <div className="text-2xl mr-3">
-                    {user.role === "admin" ? "👑" : user.role === "instructor" ? "👨‍🏫" : "👨‍🎓"}
+                    {user.role === "admin" ? "👑" : user.role === "instructor" ? "📝" : "👨‍🎓"}
                   </div>
                   <div>
                     <div className="text-base font-medium text-gray-900">{user.name}</div>

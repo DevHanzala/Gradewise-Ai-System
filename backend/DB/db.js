@@ -1,47 +1,49 @@
-import pg from "pg"
+import pkg from "pg"
 import dotenv from "dotenv"
 import { createUserTable } from "../models/userModel.js"
-import {
-  createCourseTable,
-  createStudentsCoursesTable,
-  createAssignmentsTable,
-  createSubmissionsTable,
-} from "../models/courseModel.js"
+// import { createNewAssessment } from "../models/assessmentModel.js"
+// import { createResource } from "../models/resourceModel.js"
+// import { createAIConfigTables } from "../models/aiConfigModel.js"
 
 // Load environment variables
 dotenv.config()
 
-const { Pool } = pg
+const { Pool } = pkg
 
-// Create a new Pool instance for connecting to PostgreSQL
+// Create a new pool instance with connection parameters from environment variables
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL, // Your Neon DB connection string
+  host: process.env.PGHOST,
+  database: process.env.PGDATABASE,
+  user: process.env.PGUSER,
+  password: process.env.PGPASSWORD,
+  port: 5432,
   ssl: {
-    rejectUnauthorized: false, // Required for Neon DB connections
+    require: true,
   },
 })
 
-// Function to connect to the database and create necessary tables
+/**
+ * Function to connect to the database and create tables if they don't exist
+ */
 export const connectDB = async () => {
   try {
+    // Test the connection
     const client = await pool.connect()
-    console.log("✅ Connected to PostgreSQL (Neon)")
+    console.log("✅ Connected to PostgreSQL database successfully!")
 
     // Create all tables in the correct order (respecting foreign key dependencies)
     await createUserTable() // Users table must be created first
-    await createCourseTable() // Courses table depends on users
-    await createStudentsCoursesTable() // Junction table depends on users and courses
-    await createAssignmentsTable() // Assignments table depends on courses and users
-    await createSubmissionsTable() // Submissions table depends on users and assignments
+    // await createNewAssessment() // Assessment-related tables
+    // await createResource() // Resource-related tables  
+    // await createAIConfigTables() // AI configuration tables
 
     console.log("✅ All database tables checked/created successfully")
-
-    client.release() // Release the client back to the pool
-  } catch (err) {
-    console.error("❌ PostgreSQL connection error:", err.message)
-    process.exit(1)
+    client.release()
+  } catch (error) {
+    console.error("❌ Database connection error:", error)
+    throw error
   }
 }
 
-// Export the pool for use in models and controllers
+// Export the pool for use in other modules
 export default pool

@@ -1,3 +1,5 @@
+"use client"
+
 import { useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { z } from "zod"
@@ -198,6 +200,7 @@ function Login() {
                   id="password"
                   name="password"
                   type="password"
+                  autoComplete="current-password"
                   value={formData.password}
                   onChange={handleChange}
                   className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${

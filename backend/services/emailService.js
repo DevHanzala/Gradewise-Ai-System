@@ -242,3 +242,70 @@ export const sendRoleChangeEmail = async (email, name, oldRole, newRole, changed
     throw error
   }
 }
+
+/**
+ * Sends an enrollment notification email to the student.
+ * @param {string} email - The student's email address.
+ * @param {string} name - The student's name.
+ * @param {string} assessmentTitle - The assessment title.
+ * @param {string} instructorName - The instructor's name.
+ */
+export const sendEnrollmentEmail = async (email, name, assessmentTitle, instructorName) => {
+  const loginUrl = `${process.env.FRONTEND_URL}/login`
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: email,
+    subject: `You've been enrolled in an assessment - ${assessmentTitle}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
+        <div style="background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+          <div style="text-align: center; margin-bottom: 30px;">
+            <h1 style="color: #2563eb; margin: 0; font-size: 28px;">Gradewise AI</h1>
+            <p style="color: #6b7280; margin: 5px 0 0 0;">Learning Management System</p>
+          </div>
+          
+          <h2 style="color: #1f2937; margin-bottom: 20px;">New Assessment Enrollment</h2>
+          
+          <p style="color: #4b5563; line-height: 1.6; margin-bottom: 25px;">
+            Hi ${name},<br><br>
+            You have been enrolled in a new assessment by ${instructorName}.
+          </p>
+          
+          <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 25px 0;">
+            <h3 style="color: #2563eb; margin: 0 0 10px 0; font-size: 20px;">${assessmentTitle}</h3>
+            <p style="color: #6b7280; margin: 0; font-size: 14px;">Instructor: ${instructorName}</p>
+          </div>
+          
+          <p style="color: #4b5563; line-height: 1.6; margin-bottom: 25px;">
+            You can now access this assessment from your student dashboard. Please log in to view the assessment details, 
+            including the duration, instructions, and start date.
+          </p>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${loginUrl}" 
+               style="background-color: #2563eb; color: white; padding: 12px 30px; text-decoration: none; 
+                      border-radius: 6px; font-weight: bold; display: inline-block;">
+              Access Assessment
+            </a>
+          </div>
+          
+          <div style="border-top: 1px solid #e5e7eb; margin-top: 30px; padding-top: 20px;">
+            <p style="color: #9ca3af; font-size: 12px; margin: 0;">
+              Make sure to read the assessment instructions carefully before starting. 
+              If you have any questions, please contact your instructor.
+            </p>
+          </div>
+        </div>
+      </div>
+    `,
+  }
+
+  try {
+    await transporter.sendMail(mailOptions)
+    console.log(`✅ Enrollment email sent to ${email}`)
+  } catch (error) {
+    console.error(`❌ Failed to send enrollment email to ${email}:`, error)
+    throw error
+  }
+}

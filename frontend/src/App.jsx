@@ -1,7 +1,8 @@
+import "./App.css"
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom"
 import useAuthStore from "./store/authStore.js"
 import ProtectedRoute from "./components/ProtectedRoutes.jsx"
-import "./App.css"
+
 // Public pages
 import Home from "./Pages/Home.jsx"
 import Login from "./Pages/Login.jsx"
@@ -24,28 +25,15 @@ import AdminDashboard from "./Pages/Admin/AdminDashboard.jsx"
 import InstructorDashboard from "./Pages/Instructor/InstructorDashborad.jsx"
 import AddStudent from "./Pages/Instructor/AddStudent.jsx"
 
-// Course Management (Instructor)
-import CreateCourse from "./Pages/Instructor/CourseManagement/CreateCourse.jsx"
-import CourseList from "./Pages/Instructor/CourseManagement/CourseList.jsx"
-import CourseDetail from "./Pages/Instructor/CourseManagement/CourseDetail.jsx"
-import EditCourse from "./Pages/Instructor/CourseManagement/EditCourse.jsx"
-import EnrollStudents from "./Pages/Instructor/CourseManagement/EnrollStudents.jsx"
-
-// Assignment Management (Instructor)
-import CreateAssignment from "./Pages/Instructor/AssignmentManagement/CreateAssignment.jsx"
-import AssignmentDetail from "./Pages/Instructor/AssignmentManagement/AssignmentDetail.jsx"
-import GradeSubmission from "./Pages/Instructor/AssignmentManagement/GradeSubmission.jsx"
+// Assessment Management (Instructor)
+import AssessmentList from "./Pages/Instructor/AssessmentManagement/AssessmentList.jsx"
+import CreateAssessment from "./Pages/Instructor/AssessmentManagement/CreateAssessment.jsx"
+import AssessmentDetail from "./Pages/Instructor/AssessmentManagement/AssessmentDetail.jsx"
 
 // Student pages
 import StudentDashboard from "./Pages/Student/StudentDashborad.jsx"
 
-// Course Management (Student)
-import StudentCourseList from "./Pages/Student/CourseManagement/StudentCourseList.jsx"
-import StudentCourseDetail from "./Pages/Student/CourseManagement/StudentCourseDetail.jsx"
 
-// Assignment Management (Student)
-import SubmitAssignment from "./Pages/Student/AssignmentManagement/SubmitAssignment.jsx"
-import SubmissionDetail from "./Pages/Student/AssignmentManagement/SubmissionDetail.jsx"
 
 function App() {
   const { user } = useAuthStore()
@@ -108,7 +96,7 @@ function App() {
             }
           />
           <Route
-            path="/instructor/add-student"
+            path="/instructor/students"
             element={
               <ProtectedRoute allowedRoles={["instructor", "admin"]}>
                 <AddStudent />
@@ -116,70 +104,28 @@ function App() {
             }
           />
 
-          {/* Course Management Routes (Instructor) */}
+          {/* Assessment Management Routes (Instructor) */}
           <Route
-            path="/instructor/courses"
+            path="/instructor/assessments"
             element={
               <ProtectedRoute allowedRoles={["instructor"]}>
-                <CourseList />
+                <AssessmentList />
               </ProtectedRoute>
             }
           />
           <Route
-            path="/instructor/courses/create"
+            path="/instructor/assessments/create"
             element={
               <ProtectedRoute allowedRoles={["instructor"]}>
-                <CreateCourse />
+                <CreateAssessment />
               </ProtectedRoute>
             }
           />
           <Route
-            path="/instructor/courses/:courseId"
+            path="/instructor/assessments/:assessmentId"
             element={
               <ProtectedRoute allowedRoles={["instructor"]}>
-                <CourseDetail />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/instructor/courses/:courseId/edit"
-            element={
-              <ProtectedRoute allowedRoles={["instructor"]}>
-                <EditCourse />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/instructor/courses/:courseId/enroll"
-            element={
-              <ProtectedRoute allowedRoles={["instructor", "admin"]}>
-                <EnrollStudents />
-              </ProtectedRoute>
-            }
-          />
-
-          {/* Assignment Management Routes (Instructor) */}
-          <Route
-            path="/instructor/courses/:courseId/assignments/create"
-            element={
-              <ProtectedRoute allowedRoles={["instructor", "admin"]}>
-                <CreateAssignment />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/instructor/assignments/:assignmentId"
-            element={
-              <ProtectedRoute allowedRoles={["instructor", "admin"]}>
-                <AssignmentDetail />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/instructor/submissions/:submissionId/grade"
-            element={
-              <ProtectedRoute allowedRoles={["instructor", "admin"]}>
-                <GradeSubmission />
+                <AssessmentDetail />
               </ProtectedRoute>
             }
           />
@@ -190,42 +136,6 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={["student"]}>
                 <StudentDashboard />
-              </ProtectedRoute>
-            }
-          />
-
-          {/* Course Management Routes (Student) */}
-          <Route
-            path="/student/courses"
-            element={
-              <ProtectedRoute allowedRoles={["student"]}>
-                <StudentCourseList />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/student/courses/:courseId"
-            element={
-              <ProtectedRoute allowedRoles={["student"]}>
-                <StudentCourseDetail />
-              </ProtectedRoute>
-            }
-          />
-
-          {/* Assignment Management Routes (Student) */}
-          <Route
-            path="/student/assignments/:assignmentId/submit"
-            element={
-              <ProtectedRoute allowedRoles={["student"]}>
-                <SubmitAssignment />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/student/submissions/:submissionId"
-            element={
-              <ProtectedRoute allowedRoles={["student"]}>
-                <SubmissionDetail />
               </ProtectedRoute>
             }
           />

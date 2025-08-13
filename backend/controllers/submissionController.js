@@ -11,7 +11,7 @@ import {
 } from "../models/submissionModel.js"
 import { findAssignmentById } from "../models/assignmentModel.js"
 import { isStudentEnrolled } from "../models/courseModel.js"
-import  pool  from "../DB/db.js" 
+import pool from "../DB/db.js"
 
 /**
  * Creates or updates a submission (Student only).

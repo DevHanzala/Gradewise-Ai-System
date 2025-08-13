@@ -1,3 +1,4 @@
+// backend/routes/courseRoutes.js
 import { Router } from "express"
 import {
   createNewCourse,

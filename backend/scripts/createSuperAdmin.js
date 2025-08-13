@@ -30,8 +30,8 @@ const createSuperAdmin = async () => {
     // Super Admin details - CHANGE THESE VALUES
     const superAdminData = {
       name: "Super Administrator",
-      email: "superadmin@gradewise.com", // CHANGE THIS
-      password: "SuperAdmin123!", // CHANGE THIS
+      email: "superadmin@gmail.com", // CHANGE THIS
+      password: "superadmin123", // CHANGE THIS
       role: "super_admin",
     }
 
