@@ -11,10 +11,14 @@ const useAssessmentStore = create((set, get) => ({
   currentAssessment: null,
   enrolledStudents: [],
   loading: false,
+  assessmentLoading: false, // Added missing state
+  questionLoading: false,   // Added missing state
   error: null,
 
   // Actions
   setLoading: (loading) => set({ loading }),
+  setAssessmentLoading: (loading) => set({ assessmentLoading: loading }), // Added action
+  setQuestionLoading: (loading) => set({ questionLoading: loading }),     // Added action
   setError: (error) => set({ error }),
   clearError: () => set({ error: null }),
 
@@ -24,20 +28,38 @@ const useAssessmentStore = create((set, get) => ({
       set({ loading: true, error: null })
 
       const token = localStorage.getItem("token")
+      console.log("🚀 Creating assessment with data:", assessmentData)
+      
       const response = await axios.post(`${API_URL}/assessments`, assessmentData, {
         headers: { Authorization: `Bearer ${token}` },
       })
 
+      console.log("📡 API Response:", response.data)
+
       if (response.data.success) {
+        const newAssessment = response.data.data
+        
+        // Add the new assessment to the beginning of the list
         set((state) => ({
-          assessments: [response.data.data, ...state.assessments],
+          assessments: [newAssessment, ...state.assessments],
           loading: false,
         }))
+        
         toast.success("Assessment created successfully!")
-        return response.data.data
+        console.log("✅ Assessment created and added to store:", newAssessment)
+        
+        // Force a refresh of the assessments list to ensure consistency
+        setTimeout(() => {
+          get().getInstructorAssessments()
+        }, 500)
+        
+        return newAssessment
+      } else {
+        throw new Error(response.data.message || "Failed to create assessment")
       }
     } catch (error) {
-      const errorMessage = error.response?.data?.message || "Failed to create assessment"
+      const errorMessage = error.response?.data?.message || error.message || "Failed to create assessment"
+      console.error("❌ Create assessment error:", error)
       set({ error: errorMessage, loading: false })
       toast.error(errorMessage)
       throw error
@@ -50,21 +72,31 @@ const useAssessmentStore = create((set, get) => ({
       set({ loading: true, error: null })
 
       const token = localStorage.getItem("token")
+      console.log("📋 Fetching instructor assessments...")
+      
       const response = await axios.get(`${API_URL}/assessments/instructor`, {
         headers: { Authorization: `Bearer ${token}` },
       })
 
+      console.log("📡 Instructor assessments response:", response.data)
+
       if (response.data.success) {
+        const assessments = response.data.data || []
+        console.log(`✅ Found ${assessments.length} assessments`)
+        
         set({
-          assessments: response.data.data || [],
+          assessments: assessments,
           loading: false,
         })
-        return response.data.data
+        return assessments
+      } else {
+        throw new Error(response.data.message || "Failed to fetch assessments")
       }
     } catch (error) {
-      const errorMessage = error.response?.data?.message || "Failed to fetch assessments"
+      const errorMessage = error.response?.data?.message || error.message || "Failed to fetch assessments"
+      console.error("❌ Get instructor assessments error:", error)
       set({ error: errorMessage, loading: false, assessments: [] })
-      console.error("Get instructor assessments error:", error)
+      toast.error(errorMessage)
       throw error
     }
   },
@@ -100,23 +132,34 @@ getStudentAssessments: async () => {
   // Get Assessment by ID
   getAssessmentById: async (assessmentId) => {
     try {
-      set({ loading: true, error: null })
+      console.log("🔍 getAssessmentById: Starting to fetch assessment", assessmentId)
+      set({ assessmentLoading: true, error: null })
 
       const token = localStorage.getItem("token")
       const response = await axios.get(`${API_URL}/assessments/${assessmentId}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
 
+      console.log("📡 getAssessmentById: API Response:", response.data)
+
       if (response.data.success) {
+        const assessmentData = response.data.data
+        console.log("✅ getAssessmentById: Setting currentAssessment:", assessmentData)
+        
         set({
-          currentAssessment: response.data.data,
-          loading: false,
+          currentAssessment: assessmentData,
+          assessmentLoading: false,
         })
-        return response.data.data
+        
+        console.log("✅ getAssessmentById: Store updated successfully")
+        return assessmentData
+      } else {
+        throw new Error(response.data.message || "Failed to fetch assessment")
       }
     } catch (error) {
-      const errorMessage = error.response?.data?.message || "Failed to fetch assessment"
-      set({ error: errorMessage, loading: false })
+      const errorMessage = error.response?.data?.message || error.message || "Failed to fetch assessment"
+      console.error("❌ getAssessmentById: Error:", errorMessage)
+      set({ error: errorMessage, assessmentLoading: false })
       toast.error(errorMessage)
       throw error
     }
@@ -177,8 +220,8 @@ getStudentAssessments: async () => {
     }
   },
 
-  // Enroll Student by Email (Updated)
-  enrollStudent: async (assessmentId, studentEmail) => {
+  // Enroll Student by Email (single)
+  enrollStudent: async (assessmentId, email) => {
     try {
       set({ loading: true, error: null })
 
@@ -186,22 +229,25 @@ getStudentAssessments: async () => {
       const response = await axios.post(
         `${API_URL}/assessments/${assessmentId}/enroll`,
         {
-          studentEmail, // Changed from studentId to studentEmail
+          // Backend expects { email }
+          email,
         },
         {
           headers: { Authorization: `Bearer ${token}` },
         },
       )
 
-      if (response.data.success) {
+      if (response.data.success || response.data.message === "Student enrolled successfully") {
         // Refresh enrolled students list
         await get().getEnrolledStudents(assessmentId)
         set({ loading: false })
         toast.success("Student enrolled successfully!")
-        return response.data.data
+        return response.data.data || true
+      } else {
+        throw new Error(response.data.message || "Failed to enroll student")
       }
     } catch (error) {
-      const errorMessage = error.response?.data?.message || "Failed to enroll student"
+      const errorMessage = error.response?.data?.message || error.message || "Failed to enroll student"
       set({ error: errorMessage, loading: false })
       toast.error(errorMessage)
       throw error
@@ -324,6 +370,8 @@ getStudentAssessments: async () => {
       currentAssessment: null,
       enrolledStudents: [],
       loading: false,
+      assessmentLoading: false, // Added missing state
+      questionLoading: false,   // Added missing state
       error: null,
     }),
 }))

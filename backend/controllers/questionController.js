@@ -23,6 +23,9 @@ import {
   analyzeQuestionQuality,
 } from "../services/aiService.js"
 
+// Import database connection
+import db from "../DB/db.js"
+
 /**
  * Create a new question
  */
@@ -59,40 +62,83 @@ export const createQuestionHandler = async (req, res) => {
 }
 
 /**
- * Get questions by assessment
+ * Get questions by assessment ID
+ * @route GET /api/questions/assessment/:assessmentId
  */
 export const getQuestionsByAssessmentHandler = async (req, res) => {
   try {
     const { assessmentId } = req.params
-    const { search, type, difficulty, tags } = req.query
+    const userId = req.user.id
+    const userRole = req.user.role
 
-    let questions
+    console.log(`📋 Fetching questions for assessment ${assessmentId} by user ${userId} (${userRole})`)
 
-    if (search || type || difficulty || tags) {
-      // Use search function with filters
-      const filters = {}
-      if (type) filters.question_type = type
-      if (difficulty) filters.difficulty_level = difficulty
-      if (tags) filters.tags = tags.split(",")
-
-      questions = await searchQuestions(assessmentId, search, filters)
-    } else {
-      // Get all questions
-      questions = await getQuestionsByAssessment(assessmentId)
+    // Check if user has access to this assessment
+    if (userRole === "instructor") {
+      // For instructors, check if they own the assessment
+      const assessmentCheck = await db.query(
+        "SELECT id FROM assessments WHERE id = $1 AND instructor_id = $2",
+        [assessmentId, userId]
+      )
+      
+      if (assessmentCheck.rows.length === 0) {
+        return res.status(403).json({
+          success: false,
+          message: "Access denied. You can only view questions for your own assessments."
+        })
+      }
     }
 
-    res.json({
+    // Get question blocks for the assessment with safe column selection
+    const questionBlocksQuery = `
+      SELECT 
+        id,
+        block_title,
+        block_description,
+        question_count,
+        marks_per_question,
+        difficulty_level,
+        question_type,
+        COALESCE(topics, '{}') as topics,
+        COALESCE(block_order, 1) as block_order,
+        created_at
+      FROM question_blocks 
+      WHERE assessment_id = $1 
+      ORDER BY COALESCE(block_order, 1) ASC, created_at ASC
+    `
+    
+    const questionBlocksResult = await db.query(questionBlocksQuery, [assessmentId])
+    const questionBlocks = questionBlocksResult.rows
+
+    console.log(`✅ Found ${questionBlocks.length} question blocks for assessment ${assessmentId}`)
+
+    res.status(200).json({
       success: true,
       message: "Questions retrieved successfully",
-      data: questions,
-      count: questions.length,
+      data: {
+        assessment_id: assessmentId,
+        question_blocks: questionBlocks,
+        total_blocks: questionBlocks.length
+      }
     })
+
   } catch (error) {
-    console.error("❌ Get questions error:", error)
+    console.error("❌ Get questions by assessment error:", error)
+    
+    // Check if it's a column missing error
+    if (error.code === '42703') {
+      console.log("🔧 Column missing error detected. Please run the table fix script.")
+      return res.status(500).json({
+        success: false,
+        message: "Database schema needs to be updated. Please contact administrator.",
+        error: "Missing database column. Run: node scripts/fixQuestionBlocksTable.js"
+      })
+    }
+    
     res.status(500).json({
       success: false,
       message: "Failed to retrieve questions",
-      error: error.message,
+      error: error.message
     })
   }
 }

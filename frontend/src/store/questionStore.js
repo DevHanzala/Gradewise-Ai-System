@@ -20,30 +20,31 @@ const useQuestionStore = create((set, get) => ({
   clearError: () => set({ error: null }),
 
   // Generate Questions for Assessment
-  generateQuestions: async (assessmentId) => {
+  generateQuestions: async (assessmentId, prompt, count = 5, type = "multiple_choice") => {
     try {
       set({ generating: true, error: null })
 
       const token = localStorage.getItem("token")
+      // Fixed endpoint: changed from /questions/assessments/ to /questions/assessment/
       const response = await axios.post(
-        `${API_URL}/questions/assessments/${assessmentId}/generate`,
-        {},
+        `${API_URL}/questions/assessment/${assessmentId}/generate`,
+        {
+          prompt,
+          count,
+          type,
+        },
         {
           headers: { Authorization: `Bearer ${token}` },
         },
       )
 
       if (response.data.success) {
-        const generatedData = response.data.data
-        set((state) => ({
-          generatedQuestions: generatedData.generated_blocks || [],
+        set({
+          generatedQuestions: response.data.data.questions || [],
           generating: false,
-        }))
-
-        toast.success(
-          `✅ Generated ${generatedData.total_questions} questions across ${generatedData.generated_blocks.length} blocks!`,
-        )
-        return generatedData
+        })
+        toast.success("✅ Questions generated successfully!")
+        return response.data.data.questions || []
       }
     } catch (error) {
       const errorMessage = error.response?.data?.message || "Failed to generate questions"
@@ -59,7 +60,8 @@ const useQuestionStore = create((set, get) => ({
       set({ loading: true, error: null })
 
       const token = localStorage.getItem("token")
-      const response = await axios.get(`${API_URL}/questions/assessments/${assessmentId}/questions`, {
+      // Fixed endpoint: changed from /questions/assessments/ to /questions/assessment/
+      const response = await axios.get(`${API_URL}/questions/assessment/${assessmentId}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
 
@@ -83,8 +85,9 @@ const useQuestionStore = create((set, get) => ({
       set({ generating: true, error: null })
 
       const token = localStorage.getItem("token")
+      // Fixed endpoint: changed from /questions/assessments/ to /questions/assessment/
       const response = await axios.post(
-        `${API_URL}/questions/assessments/${assessmentId}/blocks/${encodeURIComponent(blockTitle)}/regenerate`,
+        `${API_URL}/questions/assessment/${assessmentId}/blocks/${encodeURIComponent(blockTitle)}/regenerate`,
         {},
         {
           headers: { Authorization: `Bearer ${token}` },
@@ -123,8 +126,9 @@ const useQuestionStore = create((set, get) => ({
       set({ loading: true, error: null })
 
       const token = localStorage.getItem("token")
+      // Fixed endpoint: changed from /questions/assessments/ to /questions/assessment/
       const response = await axios.get(
-        `${API_URL}/questions/assessments/${assessmentId}/blocks/${encodeURIComponent(blockTitle)}`,
+        `${API_URL}/questions/assessment/${assessmentId}/blocks/${encodeURIComponent(blockTitle)}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         },
@@ -147,20 +151,22 @@ const useQuestionStore = create((set, get) => ({
       set({ loading: true, error: null })
 
       const token = localStorage.getItem("token")
-      const response = await axios.get(`${API_URL}/questions/assessments/${assessmentId}/all`, {
+      // Fixed endpoint: changed from /questions/assessments/ to /questions/assessment/
+      const response = await axios.get(`${API_URL}/questions/assessment/${assessmentId}/all`, {
         headers: { Authorization: `Bearer ${token}` },
       })
 
       if (response.data.success) {
         set({
-          currentQuestions: response.data.data,
+          assessmentQuestions: response.data.data.questions || [],
           loading: false,
         })
-        return response.data.data
+        return response.data.data.questions || []
       }
     } catch (error) {
       const errorMessage = error.response?.data?.message || "Failed to fetch assessment questions"
       set({ error: errorMessage, loading: false })
+      toast.error(`❌ ${errorMessage}`)
       throw error
     }
   },

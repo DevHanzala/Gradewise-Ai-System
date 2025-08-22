@@ -22,6 +22,7 @@ function CreateAssessment() {
     is_published: false,
     start_date: "",
     end_date: "",
+    // Removed course_id - not needed for this assessment system
   })
 
   const [questionBlocks, setQuestionBlocks] = useState([
@@ -117,16 +118,30 @@ function CreateAssessment() {
         question_blocks: questionBlocks,
       }
 
+      console.log("📝 Submitting assessment data:", assessmentData)
+      console.log("🔑 User token exists:", !!localStorage.getItem("token"))
+
       const newAssessment = await createAssessment(assessmentData)
 
-      showModal("success", "Success", "Assessment created successfully!")
+      if (newAssessment) {
+        console.log("✅ Assessment created successfully:", newAssessment)
+        showModal("success", "Success", "Assessment created successfully! Redirecting to assessment detail...")
 
-      // Navigate to assessment detail page after a short delay
-      setTimeout(() => {
-        navigate(`/instructor/assessments/${newAssessment.id}`)
-      }, 2000)
+        // Navigate to assessment detail page after a short delay
+        setTimeout(() => {
+          navigate(`/instructor/assessments/${newAssessment.id}`)
+        }, 2000)
+      }
     } catch (error) {
-      console.error("Failed to create assessment:", error)
+      console.error("❌ Failed to create assessment:", error)
+      const errorMessage = error.message || "Failed to create assessment. Please try again."
+      showModal("error", "Error", errorMessage)
+      
+      // Log additional error details
+      if (error.response) {
+        console.error("📡 Response data:", error.response.data)
+        console.error("📡 Response status:", error.response.status)
+      }
     }
   }
 
@@ -180,22 +195,6 @@ function CreateAssessment() {
                 </div>
               </div>
 
-              <div>
-                <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
-                  Description *
-                </label>
-                <textarea
-                  id="description"
-                  name="description"
-                  value={formData.description}
-                  onChange={handleInputChange}
-                  rows={4}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Describe what this assessment covers"
-                  required
-                />
-              </div>
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label htmlFor="total_marks" className="block text-sm font-medium text-gray-700 mb-2">
@@ -213,6 +212,24 @@ function CreateAssessment() {
                 </div>
 
                 <div>
+                  <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
+                    Description *
+                  </label>
+                  <textarea
+                    id="description"
+                    name="description"
+                    value={formData.description}
+                    onChange={handleInputChange}
+                    rows={4}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Describe what this assessment covers"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
                   <label htmlFor="passing_marks" className="block text-sm font-medium text-gray-700 mb-2">
                     Passing Marks
                   </label>
@@ -227,21 +244,21 @@ function CreateAssessment() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
-              </div>
 
-              <div>
-                <label htmlFor="instructions" className="block text-sm font-medium text-gray-700 mb-2">
-                  Instructions
-                </label>
-                <textarea
-                  id="instructions"
-                  name="instructions"
-                  value={formData.instructions}
-                  onChange={handleInputChange}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Special instructions for students"
-                />
+                <div>
+                  <label htmlFor="instructions" className="block text-sm font-medium text-gray-700 mb-2">
+                    Instructions
+                  </label>
+                  <textarea
+                    id="instructions"
+                    name="instructions"
+                    value={formData.instructions}
+                    onChange={handleInputChange}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Special instructions for students"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

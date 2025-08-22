@@ -18,9 +18,11 @@ function AssessmentList() {
     const fetchAssessments = async () => {
       setIsLoading(true)
       try {
+        console.log("🔄 Fetching assessments for instructor dashboard...")
         await getInstructorAssessments()
+        console.log("✅ Assessments loaded successfully")
       } catch (error) {
-        console.error("Failed to fetch assessments:", error)
+        console.error("❌ Failed to fetch assessments:", error)
         showModal("error", "Error", "Failed to fetch assessments. Please try again.")
       } finally {
         setIsLoading(false)
@@ -29,6 +31,20 @@ function AssessmentList() {
 
     fetchAssessments()
   }, [getInstructorAssessments])
+
+  // Refresh assessments when the component mounts or when assessments change
+  useEffect(() => {
+    if (assessments.length > 0) {
+      console.log(`📊 Current assessments in store: ${assessments.length}`)
+      // If we have assessments and we're still loading, stop loading
+      if (isLoading) {
+        setIsLoading(false)
+      }
+    }
+  }, [assessments, isLoading])
+
+  // Show loading state only when we're actually loading and have no assessments
+  const shouldShowLoading = isLoading && assessments.length === 0
 
   const showModal = (type, title, message) => {
     setModal({ isOpen: true, type, title, message })
@@ -39,8 +55,13 @@ function AssessmentList() {
       try {
         await deleteAssessment(assessmentId)
         showModal("success", "Success", "Assessment deleted successfully!")
+        // Refresh the list after deletion
+        setTimeout(() => {
+          getInstructorAssessments()
+        }, 1000)
       } catch (error) {
         console.error("Failed to delete assessment:", error)
+        showModal("error", "Error", "Failed to delete assessment. Please try again.")
       }
     }
   }
@@ -110,7 +131,7 @@ function AssessmentList() {
         </Card>
 
         {/* Assessment List */}
-        {isLoading ? (
+        {shouldShowLoading ? (
           <div className="flex justify-center items-center h-64">
             <LoadingSpinner size="lg" />
             <span className="ml-3 text-gray-600">Loading assessments...</span>

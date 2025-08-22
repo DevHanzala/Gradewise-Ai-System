@@ -16,7 +16,7 @@ function AssessmentDetail() {
   const {
     currentAssessment,
     enrolledStudents,
-    loading: assessmentLoading,
+    assessmentLoading,
     getAssessmentById,
     getEnrolledStudents,
     deleteAssessment,
@@ -38,6 +38,7 @@ function AssessmentDetail() {
 
   useEffect(() => {
     if (assessmentId) {
+      console.log("🔄 AssessmentDetail: Loading data for assessment:", assessmentId)
       loadAssessmentData()
     }
 
@@ -49,13 +50,15 @@ function AssessmentDetail() {
 
   const loadAssessmentData = async () => {
     try {
+      console.log("📋 AssessmentDetail: Starting to load assessment data...")
       await Promise.all([
         getAssessmentById(assessmentId),
         getEnrolledStudents(assessmentId),
         getGeneratedQuestions(assessmentId),
       ])
+      console.log("✅ AssessmentDetail: All data loaded successfully")
     } catch (error) {
-      console.error("Failed to load assessment data:", error)
+      console.error("❌ AssessmentDetail: Failed to load assessment data:", error)
     }
   }
 
@@ -160,15 +163,37 @@ function AssessmentDetail() {
   const isLoading = assessmentLoading || questionLoading
   const isGenerating = questionGenerating
 
-  if (isLoading && !currentAssessment) {
+  // Debug logging
+  console.log("🔍 AssessmentDetail Debug:", {
+    assessmentId,
+    currentAssessment: !!currentAssessment,
+    assessmentLoading,
+    questionLoading,
+    isLoading: assessmentLoading || questionLoading,
+    generatedQuestions: generatedQuestions?.length || 0,
+    enrolledStudents: enrolledStudents?.length || 0,
+    // Log the actual store state
+    storeState: {
+      currentAssessment: useAssessmentStore.getState().currentAssessment,
+      assessmentLoading: useAssessmentStore.getState().assessmentLoading,
+      enrolledStudents: useAssessmentStore.getState().enrolledStudents
+    }
+  })
+
+  // Show loading only if we don't have assessment data yet
+  if (assessmentLoading && !currentAssessment) {
+    console.log("🔄 AssessmentDetail: Showing loading spinner (no assessment data yet)")
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <LoadingSpinner size="lg" />
+        <span className="ml-3 text-gray-600">Loading assessment...</span>
       </div>
     )
   }
 
-  if (!currentAssessment) {
+  // Show assessment not found if we're not loading and don't have data
+  if (!currentAssessment && !assessmentLoading) {
+    console.log("❌ AssessmentDetail: Assessment not found")
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -184,6 +209,9 @@ function AssessmentDetail() {
     )
   }
 
+  // If we have assessment data, show the content (questions can load separately)
+  if (currentAssessment) {
+    console.log("✅ AssessmentDetail: Rendering assessment content")
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
@@ -197,6 +225,20 @@ function AssessmentDetail() {
               <p className="text-gray-600">{currentAssessment.description}</p>
             </div>
             <div className="flex space-x-3">
+                {/* Debug button */}
+                <button
+                  onClick={() => {
+                    console.log("🔍 Manual Store Check:", {
+                      currentAssessment: useAssessmentStore.getState().currentAssessment,
+                      assessmentLoading: useAssessmentStore.getState().assessmentLoading,
+                      enrolledStudents: useAssessmentStore.getState().enrolledStudents
+                    })
+                  }}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
+                >
+                  Debug Store
+                </button>
+                
               <button
                 onClick={handleGenerateQuestions}
                 disabled={isGenerating}
@@ -312,29 +354,27 @@ function AssessmentDetail() {
                 </div>
               </CardHeader>
               <CardContent>
-                {currentAssessment.question_blocks && currentAssessment.question_blocks.length > 0 ? (
+                  {questionLoading ? (
+                    <div className="flex justify-center items-center py-8">
+                      <LoadingSpinner size="md" />
+                      <span className="ml-3 text-gray-600">Loading question blocks...</span>
+                    </div>
+                  ) : generatedQuestions && generatedQuestions.length > 0 ? (
                   <div className="space-y-4">
-                    {currentAssessment.question_blocks.map((block, index) => {
-                      const generatedBlock = generatedQuestions.find((gq) => gq.block_title === block.block_title)
-                      const hasQuestions =
-                        generatedBlock && generatedBlock.questions && generatedBlock.questions.length > 0
-
-                      return (
+                      {generatedQuestions.map((block, index) => (
                         <div key={index} className="border border-gray-200 rounded-lg p-4">
                           <div className="flex items-start justify-between mb-3">
                             <h3 className="font-semibold text-gray-900">{block.block_title}</h3>
                             <div className="flex space-x-2">
                               <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded">
-                                {block.question_type}
+                                {block.question_type || 'multiple_choice'}
                               </span>
                               <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded">
-                                {block.difficulty_level}
+                                {block.difficulty_level || 'medium'}
                               </span>
-                              {hasQuestions && (
                                 <span className="px-2 py-1 text-xs bg-purple-100 text-purple-800 rounded">
-                                  ✅ Generated
+                                {block.question_count || 0} questions
                                 </span>
-                              )}
                             </div>
                           </div>
 
@@ -344,18 +384,18 @@ function AssessmentDetail() {
 
                           <div className="grid grid-cols-2 gap-4 text-sm mb-3">
                             <div>
-                              <span className="font-medium text-gray-700">Questions:</span>{" "}
-                              <span className="text-gray-900">{block.question_count}</span>
+                              <span className="text-gray-500">Questions:</span>
+                              <span className="ml-2 font-medium">{block.question_count || 0}</span>
                             </div>
                             <div>
-                              <span className="font-medium text-gray-700">Marks Each:</span>{" "}
-                              <span className="text-gray-900">{block.marks_per_question}</span>
+                              <span className="text-gray-500">Marks per question:</span>
+                              <span className="ml-2 font-medium">{block.marks_per_question || 1}</span>
                             </div>
                           </div>
 
                           {block.topics && block.topics.length > 0 && (
                             <div className="mb-3">
-                              <span className="font-medium text-gray-700 text-sm">Topics:</span>
+                              <span className="text-gray-500 text-sm">Topics: </span>
                               <div className="flex flex-wrap gap-1 mt-1">
                                 {block.topics.map((topic, topicIndex) => (
                                   <span
@@ -368,41 +408,24 @@ function AssessmentDetail() {
                               </div>
                             </div>
                           )}
-
-                          {hasQuestions && (
-                            <div className="flex space-x-2 mt-3">
-                              <button
-                                onClick={() =>
-                                  setSelectedBlock(selectedBlock === block.block_title ? null : block.block_title)
-                                }
-                                className="px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
-                              >
-                                {selectedBlock === block.block_title ? "Hide Questions" : "View Questions"}
-                              </button>
-                              <button
-                                onClick={() => handleRegenerateBlock(block.block_title)}
-                                disabled={isGenerating}
-                                className="px-3 py-1 text-xs bg-orange-100 text-orange-700 rounded hover:bg-orange-200 disabled:opacity-50"
-                              >
-                                🔄 Regenerate
-                              </button>
-                            </div>
-                          )}
-
-                          {selectedBlock === block.block_title && hasQuestions && (
-                            <div className="mt-4 border-t pt-4">
-                              <h4 className="font-medium text-gray-900 mb-3">Generated Questions:</h4>
-                              <div className="max-h-96 overflow-y-auto">
-                                {generatedBlock.questions.map((question) => renderQuestionPreview(question))}
-                              </div>
-                            </div>
-                          )}
                         </div>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-gray-500 text-center py-8">No question blocks defined</p>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <div className="text-4xl mb-4">📝</div>
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">No Question Blocks Yet</h3>
+                      <p className="text-gray-600 mb-4">
+                        This assessment doesn't have any question blocks configured yet.
+                      </p>
+                              <button
+                        onClick={handleGenerateQuestions}
+                                disabled={isGenerating}
+                        className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50"
+                              >
+                        {isGenerating ? "Generating..." : "🤖 Generate Question Blocks"}
+                              </button>
+                            </div>
                 )}
               </CardContent>
             </Card>
@@ -410,131 +433,51 @@ function AssessmentDetail() {
 
           {/* Sidebar */}
           <div className="space-y-6">
-            {/* Quick Stats */}
-            <Card>
-              <CardHeader>
-                <h2 className="text-lg font-semibold text-gray-900">Quick Stats</h2>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Enrolled Students</span>
-                  <span className="font-semibold text-gray-900">{enrolledStudents.length}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Question Blocks</span>
-                  <span className="font-semibold text-gray-900">{currentAssessment.question_blocks?.length || 0}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Generated Questions</span>
-                  <span className="font-semibold text-gray-900">
-                    {generatedQuestions.reduce((sum, block) => sum + (block.questions?.length || 0), 0)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Total Questions</span>
-                  <span className="font-semibold text-gray-900">
-                    {currentAssessment.question_blocks?.reduce((sum, block) => sum + (block.question_count || 0), 0) ||
-                      0}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Created</span>
-                  <span className="font-semibold text-gray-900">
-                    {new Date(currentAssessment.created_at).toLocaleDateString()}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* AI Generation Status */}
-            {generatedQuestions.length > 0 && (
+              {/* Quick Actions */}
               <Card>
                 <CardHeader>
-                  <h2 className="text-lg font-semibold text-gray-900">🤖 AI Generation Status</h2>
+                  <h3 className="text-lg font-semibold text-gray-900">Quick Actions</h3>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {generatedQuestions.map((block, index) => (
-                    <div key={index} className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium text-gray-900 text-sm">{block.block_title}</p>
-                        <p className="text-xs text-gray-600">{block.questions?.length || 0} questions</p>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-xs text-green-600">✅ Generated</span>
-                        <p className="text-xs text-gray-500">
-                          {block.generated_at ? new Date(block.generated_at).toLocaleDateString() : "Recently"}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Enrolled Students */}
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-gray-900">Enrolled Students</h2>
+                  <button
+                    onClick={handleGenerateQuestions}
+                    disabled={isGenerating}
+                    className="w-full px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center"
+                  >
+                    {isGenerating ? (
+                      <>
+                        <LoadingSpinner size="sm" className="mr-2" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M13 10V3L4 14h7v7l9-11h-7z"
+                          />
+                        </svg>
+                        Generate Questions
+                      </>
+                    )}
+                  </button>
+                  
                   <Link
                     to={`/instructor/assessments/${assessmentId}/enroll`}
-                    className="text-blue-600 hover:text-blue-800 text-sm"
+                    className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-center block"
                   >
-                    Add More
+                    Add Students
                   </Link>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {enrolledStudents.length > 0 ? (
-                  <div className="space-y-3">
-                    {enrolledStudents.slice(0, 5).map((student) => (
-                      <div key={student.id} className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium text-gray-900">{student.name}</p>
-                          <p className="text-sm text-gray-600">{student.email}</p>
-                        </div>
-                        <span className="text-xs text-gray-500">
-                          {new Date(student.enrolled_at).toLocaleDateString()}
-                        </span>
-                      </div>
-                    ))}
-                    {enrolledStudents.length > 5 && (
-                      <p className="text-sm text-gray-500 text-center pt-2">
-                        +{enrolledStudents.length - 5} more students
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-gray-500 text-center py-4">No students enrolled yet</p>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Actions */}
-            <Card>
-              <CardHeader>
-                <h2 className="text-lg font-semibold text-gray-900">Actions</h2>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <button
-                  onClick={handleGenerateQuestions}
-                  disabled={isGenerating}
-                  className="w-full px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50"
-                >
-                  {isGenerating ? "🔄 Generating..." : "🤖 Generate Questions with AI"}
-                </button>
-                <Link
-                  to={`/instructor/assessments/${assessmentId}/enroll`}
-                  className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-center block"
-                >
-                  Add Students
-                </Link>
+                  
                 <button
                   onClick={() => navigate(`/instructor/assessments/${assessmentId}/edit`)}
                   className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                 >
                   Edit Assessment
                 </button>
+                  
                 <button
                   onClick={showDeleteConfirmation}
                   className="w-full px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
@@ -543,7 +486,46 @@ function AssessmentDetail() {
                 </button>
               </CardContent>
             </Card>
-          </div>
+
+              {/* Assessment Stats */}
+              <Card>
+                <CardHeader>
+                  <h3 className="text-lg font-semibold text-gray-900">Assessment Stats</h3>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Status:</span>
+                    <span
+                      className={`font-medium ${
+                        currentAssessment.is_published ? "text-green-600" : "text-yellow-600"
+                      }`}
+                    >
+                      {currentAssessment.is_published ? "Published" : "Draft"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Duration:</span>
+                    <span className="font-medium">{currentAssessment.duration} minutes</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Total Marks:</span>
+                    <span className="font-medium">{currentAssessment.total_marks}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Passing Marks:</span>
+                    <span className="font-medium">{currentAssessment.passing_marks}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Question Blocks:</span>
+                    <span className="font-medium">{generatedQuestions ? generatedQuestions.length : 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Enrolled Students:</span>
+                    <span className="font-medium">{enrolledStudents ? enrolledStudents.length : 0}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
         </div>
       </div>
 
@@ -560,6 +542,7 @@ function AssessmentDetail() {
       </Modal>
     </div>
   )
+  }
 }
 
 export default AssessmentDetail

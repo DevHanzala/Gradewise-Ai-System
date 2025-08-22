@@ -14,6 +14,8 @@ import {
   getAssessmentStatistics,
   enrollMultipleStudentsDb,
   ensureAssessmentAttemptsTable,
+  ensureAssessmentsTable,
+  storeQuestionBlocks,
 } from "../models/assessmentModel.js"
 import { getUserByEmail } from "../models/userModel.js"
 import { sendAssessmentEnrollmentEmail } from "../services/emailService.js"
@@ -27,34 +29,84 @@ ensureAssessmentAttemptsTable().catch(console.error)
  */
 export const createNewAssessment = async (req, res) => {
   try {
-    const { title, description, course_id, course_title, end_date, time_limit, passing_marks, settings } = req.body
+    // Ensure required tables exist
+    await ensureAssessmentsTable()
+    
+    const { 
+      title, 
+      description, 
+      duration, 
+      total_marks, 
+      passing_marks, 
+      instructions, 
+      is_published, 
+      start_date, 
+      end_date, 
+      question_blocks 
+    } = req.body
     const instructor_id = req.user.id
 
     // Validate required fields
     if (!title) {
-  return res.status(400).json({ message: "Title is required" })
-}
+      return res.status(400).json({ 
+        success: false,
+        message: "Title is required" 
+      })
+    }
 
+    if (!description) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Description is required" 
+      })
+    }
 
-    const newAssessment = await createAssessment({
+    // Create assessment data object (removed course_id concept)
+    const assessmentData = {
       title,
       description,
       instructor_id,
-      course_id,
-      course_title,
-      end_date,
-      time_limit,
-      passing_marks,
-      settings: settings ? JSON.stringify(settings) : null,
-    })
+      duration: duration || 60,
+      total_marks: total_marks || 100,
+      passing_marks: passing_marks || 50,
+      instructions: instructions || null,
+      is_published: is_published || false,
+      start_date: start_date || null,
+      end_date: end_date || null,
+    }
 
+    console.log("📝 Creating assessment with data:", assessmentData)
+
+    const newAssessment = await createAssessment(assessmentData)
+
+    // Store question blocks if provided
+    if (question_blocks && Array.isArray(question_blocks)) {
+      console.log("📋 Storing question blocks:", question_blocks.length)
+      try {
+        // Store question blocks in the database
+        await storeQuestionBlocks(newAssessment.id, question_blocks, instructor_id)
+        console.log("✅ Question blocks stored successfully")
+      } catch (error) {
+        console.error("❌ Failed to store question blocks:", error)
+        // Don't fail the assessment creation if question blocks fail
+      }
+    }
+
+    console.log("✅ Assessment created successfully:", newAssessment.id)
+
+    // Return response in the format expected by frontend
     res.status(201).json({
+      success: true,
       message: "Assessment created successfully",
-      assessment: newAssessment,
+      data: newAssessment
     })
   } catch (error) {
-    console.error("Create assessment error:", error)
-    res.status(500).json({ message: "Failed to create assessment", error: error.message })
+    console.error("❌ Create assessment error:", error)
+    res.status(500).json({ 
+      success: false,
+      message: "Failed to create assessment", 
+      error: error.message 
+    })
   }
 }
 
@@ -64,18 +116,29 @@ export const createNewAssessment = async (req, res) => {
  */
 export const getInstructorAssessments = async (req, res) => {
   try {
+    // Ensure required tables exist
+    await ensureAssessmentsTable()
+    
     const instructor_id = req.user.id
     console.log(`📋 Fetching assessments for instructor: ${instructor_id}`)
 
     const assessments = await getAssessmentsByInstructor(instructor_id)
 
+    console.log(`✅ Found ${assessments.length} assessments for instructor`)
+
+    // Return response in the format expected by frontend
     res.status(200).json({
+      success: true,
       message: "Assessments retrieved successfully",
-      assessments,
+      data: assessments || []
     })
   } catch (error) {
     console.error("❌ Get instructor assessments error:", error)
-    res.status(500).json({ message: "Failed to retrieve assessments", error: error.message })
+    res.status(500).json({ 
+      success: false,
+      message: "Failed to retrieve assessments", 
+      error: error.message 
+    })
   }
 }
 
@@ -94,17 +157,18 @@ export const getAssessment = async (req, res) => {
     const assessment = await getAssessmentById(assessment_id, user_id, user_role)
 
     if (!assessment) {
-      return res.status(404).json({ message: "Assessment not found" })
+      return res.status(404).json({ success: false, message: "Assessment not found" })
     }
 
     console.log("✅ Assessment fetched successfully")
     res.status(200).json({
+      success: true,
       message: "Assessment retrieved successfully",
-      assessment,
+      data: assessment,
     })
   } catch (error) {
     console.error("❌ Get assessment error:", error)
-    res.status(500).json({ message: "Failed to retrieve assessment", error: error.message })
+    res.status(500).json({ success: false, message: "Failed to retrieve assessment", error: error.message })
   }
 }
 

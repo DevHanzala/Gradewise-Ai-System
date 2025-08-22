@@ -51,6 +51,16 @@ function EnrollStudents() {
   const fetchAvailableStudents = async () => {
     try {
       const token = localStorage.getItem("token")
+      if (!token) {
+        // No token available
+        return
+      }
+
+      // Only admins/super_admins can list all users from /auth/users
+      if (!user || (user.role !== "admin" && user.role !== "super_admin")) {
+        return
+      }
+
       const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000/api"}/auth/users`, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -61,6 +71,9 @@ function EnrollStudents() {
         const data = await response.json()
         const students = data.users?.filter((user) => user.role === "student") || []
         setAvailableStudents(students)
+      } else if (response.status === 401 || response.status === 403) {
+        // Not authorized to view all users; silently ignore and let manual email enrollment be used
+        setAvailableStudents([])
       }
     } catch (error) {
       console.error("Failed to fetch students:", error)

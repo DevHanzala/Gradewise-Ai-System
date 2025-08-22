@@ -172,30 +172,37 @@ export const deleteAssessment = async (id) => {
  * @param {number} instructor_id - Instructor ID
  * @returns {Array} List of assessments
  */
-// assessmentModel.js
 export const getAssessmentsByInstructor = async (instructor_id) => {
   const query = `
     SELECT 
-      id,
-      title,
-      description,
-      instructor_id,
-      duration,
-      total_marks,
-      passing_marks,
-      instructions,
-      is_published,
-      start_date,
-      end_date,
-      created_at,
-      updated_at,
-      course_id
-    FROM assessments
-    WHERE instructor_id = $1
-    ORDER BY created_at DESC
+      a.id,
+      a.title,
+      a.description,
+      a.instructor_id,
+      a.duration,
+      a.total_marks,
+      a.passing_marks,
+      a.instructions,
+      a.is_published,
+      a.start_date,
+      a.end_date,
+      a.created_at,
+      a.updated_at,
+      (SELECT COUNT(*) FROM assessment_enrollments ae WHERE ae.assessment_id = a.id) AS enrolled_students,
+      (SELECT COUNT(*) FROM question_blocks qb WHERE qb.assessment_id = a.id) AS question_blocks_count
+    FROM assessments a
+    WHERE a.instructor_id = $1
+    ORDER BY a.created_at DESC
   `
+  
+  try {
   const result = await db.query(query, [instructor_id])
+    console.log(`📊 Found ${result.rows.length} assessments for instructor ${instructor_id}`)
   return result.rows
+  } catch (error) {
+    console.error("❌ Error fetching instructor assessments:", error)
+    throw error
+  }
 }
 
 
@@ -597,6 +604,228 @@ export const getAssessmentQuestions = async (assessmentId) => {
     }
     return question
   })
+}
+
+/**
+ * Create assessments table if it doesn't exist
+ * @returns {boolean} Success
+ */
+export const ensureAssessmentsTable = async () => {
+  try {
+    // Check if table exists
+    const tableCheck = await db.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'assessments'
+      )
+    `)
+
+    if (!tableCheck.rows[0].exists) {
+      console.log("Creating assessments table...")
+
+      // Create assessments table (removed course_id concept)
+      await db.query(`
+        CREATE TABLE assessments (
+          id SERIAL PRIMARY KEY,
+          title VARCHAR(255) NOT NULL,
+          description TEXT,
+          instructor_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          duration INTEGER DEFAULT 60,
+          total_marks INTEGER DEFAULT 100,
+          passing_marks INTEGER DEFAULT 50,
+          instructions TEXT,
+          is_published BOOLEAN DEFAULT FALSE,
+          start_date TIMESTAMP WITH TIME ZONE,
+          end_date TIMESTAMP WITH TIME ZONE,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+      `)
+
+      // Create indexes (removed course_id index)
+      await db.query(`
+        CREATE INDEX idx_assessments_instructor_id ON assessments(instructor_id);
+        CREATE INDEX idx_assessments_created_at ON assessments(created_at);
+      `)
+
+      console.log("✅ assessments table created successfully")
+    } else {
+      console.log("✅ assessments table already exists")
+    }
+
+    // Check if assessment_enrollments table exists
+    const enrollmentsCheck = await db.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'assessment_enrollments'
+      )
+    `)
+
+    if (!enrollmentsCheck.rows[0].exists) {
+      console.log("Creating assessment_enrollments table...")
+
+      // Create assessment_enrollments table
+      await db.query(`
+        CREATE TABLE assessment_enrollments (
+          id SERIAL PRIMARY KEY,
+          assessment_id INTEGER NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
+          student_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          enrolled_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(assessment_id, student_id)
+        )
+      `)
+
+      // Create indexes
+      await db.query(`
+        CREATE INDEX idx_assessment_enrollments_assessment_id ON assessment_enrollments(assessment_id);
+        CREATE INDEX idx_assessment_enrollments_student_id ON assessment_enrollments(student_id);
+      `)
+
+      console.log("✅ assessment_enrollments table created successfully")
+    } else {
+      console.log("✅ assessment_enrollments table already exists")
+    }
+
+    // Check if question_blocks table exists
+    const questionBlocksCheck = await db.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'question_blocks'
+      )
+    `)
+
+    if (!questionBlocksCheck.rows[0].exists) {
+      console.log("Creating question_blocks table...")
+
+      // Create question_blocks table to store question block configurations
+      await db.query(`
+        CREATE TABLE question_blocks (
+          id SERIAL PRIMARY KEY,
+          assessment_id INTEGER NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
+          block_title VARCHAR(255) NOT NULL,
+          block_description TEXT,
+          question_count INTEGER NOT NULL DEFAULT 1,
+          marks_per_question INTEGER NOT NULL DEFAULT 1,
+          difficulty_level VARCHAR(20) DEFAULT 'medium',
+          question_type VARCHAR(50) DEFAULT 'multiple_choice',
+          topics TEXT[], -- Array of topics
+          block_order INTEGER NOT NULL DEFAULT 1,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+      `)
+
+      // Create indexes
+      await db.query(`
+        CREATE INDEX idx_question_blocks_assessment_id ON question_blocks(assessment_id);
+        CREATE INDEX idx_question_blocks_order ON question_blocks(block_order);
+      `)
+
+      console.log("✅ question_blocks table created successfully")
+    } else {
+      console.log("✅ question_blocks table already exists - checking for missing columns...")
+      
+      // Check if block_order column exists, if not add it
+      const columnCheck = await db.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.columns 
+          WHERE table_name = 'question_blocks' 
+          AND column_name = 'block_order'
+        )
+      `)
+      
+      if (!columnCheck.rows[0].exists) {
+        console.log("Adding missing block_order column to question_blocks table...")
+        await db.query(`
+          ALTER TABLE question_blocks 
+          ADD COLUMN block_order INTEGER NOT NULL DEFAULT 1
+        `)
+        
+        // Create index for the new column
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_question_blocks_order ON question_blocks(block_order)
+        `)
+        
+        console.log("✅ block_order column added successfully")
+      } else {
+        console.log("✅ block_order column already exists")
+      }
+      
+      // Check if topics column exists, if not add it
+      const topicsCheck = await db.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.columns 
+          WHERE table_name = 'question_blocks' 
+          AND column_name = 'topics'
+        )
+      `)
+      
+      if (!topicsCheck.rows[0].exists) {
+        console.log("Adding missing topics column to question_blocks table...")
+        await db.query(`
+          ALTER TABLE question_blocks 
+          ADD COLUMN topics TEXT[] DEFAULT '{}'
+        `)
+        console.log("✅ topics column added successfully")
+      } else {
+        console.log("✅ topics column already exists")
+      }
+    }
+
+    return true
+  } catch (error) {
+    console.error("❌ Error creating assessments tables:", error)
+    throw error
+  }
+}
+
+/**
+ * Store question blocks for an assessment
+ * @param {number} assessmentId - Assessment ID
+ * @param {Array} questionBlocks - Array of question block objects
+ * @param {number} instructorId - Instructor ID
+ * @returns {boolean} Success
+ */
+export const storeQuestionBlocks = async (assessmentId, questionBlocks, instructorId) => {
+  try {
+    console.log(`📝 Storing ${questionBlocks.length} question blocks for assessment ${assessmentId}`)
+    
+    // Delete existing question blocks for this assessment
+    await db.query("DELETE FROM question_blocks WHERE assessment_id = $1", [assessmentId])
+    
+    // Insert new question blocks
+    for (let i = 0; i < questionBlocks.length; i++) {
+      const block = questionBlocks[i]
+      const query = `
+        INSERT INTO question_blocks (
+          assessment_id, block_title, block_description, question_count, 
+          marks_per_question, difficulty_level, question_type, topics, block_order
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `
+      
+      const values = [
+        assessmentId,
+        block.block_title,
+        block.block_description || null,
+        block.question_count || 1,
+        block.marks_per_question || 1,
+        block.difficulty_level || 'medium',
+        block.question_type || 'multiple_choice',
+        block.topics || [],
+        i + 1
+      ]
+      
+      await db.query(query, values)
+    }
+    
+    console.log(`✅ Successfully stored ${questionBlocks.length} question blocks`)
+    return true
+  } catch (error) {
+    console.error("❌ Error storing question blocks:", error)
+    throw error
+  }
 }
 
 /**
