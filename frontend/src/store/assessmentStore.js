@@ -69,30 +69,33 @@ const useAssessmentStore = create((set, get) => ({
     }
   },
 
-  // Get Student Assessments
-  getStudentAssessments: async () => {
-    try {
-      set({ loading: true, error: null })
+  // Student Assessments
+getStudentAssessments: async () => {
+  try {
+    set({ loading: true, error: null })
 
-      const token = localStorage.getItem("token")
-      const response = await axios.get(`${API_URL}/assessments/student/enrolled`, {
-        headers: { Authorization: `Bearer ${token}` },
+    const token = localStorage.getItem("token")
+    const response = await axios.get(`${API_URL}/assessments/student/enrolled`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+
+    if (response.data.success) {
+      set({
+        studentAssessments: response.data.data || [],
+        loading: false,
       })
-
-      if (response.data.success) {
-        set({
-          studentAssessments: response.data.data || [],
-          loading: false,
-        })
-        return response.data.data
-      }
-    } catch (error) {
-      const errorMessage = error.response?.data?.message || "Failed to fetch student assessments"
-      set({ error: errorMessage, loading: false, studentAssessments: [] })
-      console.error("Get student assessments error:", error)
-      throw error
+      return response.data.data
+    } else {
+      throw new Error(response.data.message || "Failed to fetch student assessments")
     }
-  },
+  } catch (error) {
+    const errorMessage = error.response?.data?.message || error.message
+    set({ error: errorMessage, loading: false, studentAssessments: [] })
+    console.error("Get student assessments error:", errorMessage)
+    throw error
+  }
+},
+
 
   // Get Assessment by ID
   getAssessmentById: async (assessmentId) => {
@@ -174,8 +177,8 @@ const useAssessmentStore = create((set, get) => ({
     }
   },
 
-  // Enroll Student
-  enrollStudent: async (assessmentId, studentId) => {
+  // Enroll Student by Email (Updated)
+  enrollStudent: async (assessmentId, studentEmail) => {
     try {
       set({ loading: true, error: null })
 
@@ -183,7 +186,7 @@ const useAssessmentStore = create((set, get) => ({
       const response = await axios.post(
         `${API_URL}/assessments/${assessmentId}/enroll`,
         {
-          studentId,
+          studentEmail, // Changed from studentId to studentEmail
         },
         {
           headers: { Authorization: `Bearer ${token}` },
@@ -191,13 +194,45 @@ const useAssessmentStore = create((set, get) => ({
       )
 
       if (response.data.success) {
-        get().getEnrolledStudents(assessmentId)
+        // Refresh enrolled students list
+        await get().getEnrolledStudents(assessmentId)
         set({ loading: false })
         toast.success("Student enrolled successfully!")
         return response.data.data
       }
     } catch (error) {
       const errorMessage = error.response?.data?.message || "Failed to enroll student"
+      set({ error: errorMessage, loading: false })
+      toast.error(errorMessage)
+      throw error
+    }
+  },
+
+  // Enroll Students by Email (Bulk)
+  enrollStudentsByEmail: async (assessmentId, emails) => {
+    try {
+      set({ loading: true, error: null })
+
+      const token = localStorage.getItem("token")
+      const response = await axios.post(
+        `${API_URL}/assessments/${assessmentId}/enroll-bulk`,
+        {
+          emails,
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      )
+
+      if (response.data.success) {
+        // Refresh enrolled students list
+        await get().getEnrolledStudents(assessmentId)
+        set({ loading: false })
+        toast.success(`Successfully enrolled ${emails.length} student(s)!`)
+        return response.data.data
+      }
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || "Failed to enroll students"
       set({ error: errorMessage, loading: false })
       toast.error(errorMessage)
       throw error
@@ -240,7 +275,7 @@ const useAssessmentStore = create((set, get) => ({
       })
 
       if (response.data.success) {
-        get().getEnrolledStudents(assessmentId)
+        await get().getEnrolledStudents(assessmentId)
         set({ loading: false })
         toast.success("Student unenrolled successfully!")
         return true

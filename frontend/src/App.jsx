@@ -1,62 +1,69 @@
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom"
+import { Toaster } from "react-hot-toast"
 import "./App.css"
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom"
-import useAuthStore from "./store/authStore.js"
-import ProtectedRoute from "./components/ProtectedRoutes.jsx"
+// Auth Pages
+import Login from "./Pages/Login"
+import Signup from "./Pages/Signup"
+import ForgotPassword from "./Pages/ForgotPassword"
+import ResetPassword from "./Pages/ResetPassword"
+import VerifyEmail from "./Pages/VerifyEmail"
 
-// Public pages
-import Home from "./Pages/Home.jsx"
-import Login from "./Pages/Login.jsx"
-import Signup from "./Pages/Signup.jsx"
-import VerifyEmail from "./Pages/VerifyEmail.jsx"
-import ForgotPassword from "./Pages/ForgotPassword.jsx"
-import ResetPassword from "./Pages/ResetPassword.jsx"
-import NotFound from "./Pages/NotFound.jsx"
+// General Pages
+import Home from "./Pages/Home"
+import Profile from "./Pages/Profile"
+import NotFound from "./Pages/NotFound"
 
-// Profile page
-import Profile from "./Pages/Profile.jsx"
+// Admin Pages
+import AdminDashboard from "./Pages/Admin/AdminDashboard"
 
-// Super Admin pages
-import SuperAdminDashboard from "./Pages/SuperAdmin/SuperAdminDashboard.jsx"
+// Super Admin Pages
+import SuperAdminDashboard from "./Pages/SuperAdmin/SuperAdminDashboard"
 
-// Admin pages
-import AdminDashboard from "./Pages/Admin/AdminDashboard.jsx"
+// Instructor Pages
+import InstructorDashboard from "./Pages/Instructor/InstructorDashborad"
+import CreateAssessment from "./Pages/Instructor/AssessmentManagement/CreateAssessment"
+import AssessmentList from "./Pages/Instructor/AssessmentManagement/AssessmentList"
+import AssessmentDetail from "./Pages/Instructor/AssessmentManagement/AssessmentDetail"
+import EnrollStudents from "./Pages/Instructor/AssessmentManagement/EnrollStudents"
+import GenerateQuestions from "./Pages/Instructor/AssessmentManagement/GenerateQuestions"
 
-// Instructor pages
-import InstructorDashboard from "./Pages/Instructor/InstructorDashborad.jsx"
-import AddStudent from "./Pages/Instructor/AddStudent.jsx"
+// Course Management
+import CreateCourse from "./Pages/Instructor/CourseManagement/CreateCourse"
+import CourseList from "./Pages/Instructor/CourseManagement/CourseList"
+import CourseDetail from "./Pages/Instructor/CourseManagement/CourseDetail"
+import EditCourse from "./Pages/Instructor/CourseManagement/EditCourse"
+import EnrollStudentsInCourse from "./Pages/Instructor/CourseManagement/EnrollStudents"
 
-// Assessment Management (Instructor)
-import AssessmentList from "./Pages/Instructor/AssessmentManagement/AssessmentList.jsx"
-import CreateAssessment from "./Pages/Instructor/AssessmentManagement/CreateAssessment.jsx"
-import AssessmentDetail from "./Pages/Instructor/AssessmentManagement/AssessmentDetail.jsx"
+// Assignment Management
+import CreateAssignment from "./Pages/Instructor/AssignmentManagement/CreateAssignment"
+import AssignmentDetail from "./Pages/Instructor/AssignmentManagement/AssignmentDetail"
+import GradeSubmission from "./Pages/Instructor/AssignmentManagement/GradeSubmission"
 
-// Student pages
-import StudentDashboard from "./Pages/Student/StudentDashborad.jsx"
+// Student Pages
+import StudentDashboard from "./Pages/Student/StudentDashborad"
+import StudentCourseList from "./Pages/Student/CourseManagement/StudentCourseList"
+import StudentCourseDetail from "./Pages/Student/CourseManagement/StudentCourseDetail"
+import SubmitAssignment from "./Pages/Student/AssignmentManagement/SubmitAssignment"
+import SubmissionDetail from "./Pages/Student/AssignmentManagement/SubmissionDetail"
+import TakeAssessment from "./Pages/Student/AssesmentManagement/TakeAssessment"
 
-
+// Components
+import ProtectedRoute from "./components/ProtectedRoutes"
 
 function App() {
-  const { user } = useAuthStore()
-
   return (
     <Router>
       <div className="App">
         <Routes>
           {/* Public Routes */}
           <Route path="/" element={<Home />} />
-          <Route
-            path="/login"
-            element={user ? <Navigate to={`/${user.role.replace("_", "-")}/dashboard`} /> : <Login />}
-          />
-          <Route
-            path="/signup"
-            element={user ? <Navigate to={`/${user.role.replace("_", "-")}/dashboard`} /> : <Signup />}
-          />
-          <Route path="/verify-email/:token" element={<VerifyEmail />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/reset-password/:token" element={<ResetPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/verify-email" element={<VerifyEmail />} />
 
-          {/* Protected Profile Route */}
+          {/* Protected Routes */}
           <Route
             path="/profile"
             element={
@@ -70,7 +77,7 @@ function App() {
           <Route
             path="/super-admin/dashboard"
             element={
-              <ProtectedRoute allowedRoles={["super_admin"]}>
+              <ProtectedRoute requiredRole="super_admin">
                 <SuperAdminDashboard />
               </ProtectedRoute>
             }
@@ -80,7 +87,7 @@ function App() {
           <Route
             path="/admin/dashboard"
             element={
-              <ProtectedRoute allowedRoles={["admin"]}>
+              <ProtectedRoute requiredRole="admin">
                 <AdminDashboard />
               </ProtectedRoute>
             }
@@ -90,25 +97,17 @@ function App() {
           <Route
             path="/instructor/dashboard"
             element={
-              <ProtectedRoute allowedRoles={["instructor"]}>
+              <ProtectedRoute requiredRole="instructor">
                 <InstructorDashboard />
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/instructor/students"
-            element={
-              <ProtectedRoute allowedRoles={["instructor", "admin"]}>
-                <AddStudent />
-              </ProtectedRoute>
-            }
-          />
 
-          {/* Assessment Management Routes (Instructor) */}
+          {/* Assessment Management Routes */}
           <Route
             path="/instructor/assessments"
             element={
-              <ProtectedRoute allowedRoles={["instructor"]}>
+              <ProtectedRoute requiredRole="instructor">
                 <AssessmentList />
               </ProtectedRoute>
             }
@@ -116,7 +115,7 @@ function App() {
           <Route
             path="/instructor/assessments/create"
             element={
-              <ProtectedRoute allowedRoles={["instructor"]}>
+              <ProtectedRoute requiredRole="instructor">
                 <CreateAssessment />
               </ProtectedRoute>
             }
@@ -124,8 +123,92 @@ function App() {
           <Route
             path="/instructor/assessments/:assessmentId"
             element={
-              <ProtectedRoute allowedRoles={["instructor"]}>
+              <ProtectedRoute requiredRole="instructor">
                 <AssessmentDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instructor/assessments/:assessmentId/enroll"
+            element={
+              <ProtectedRoute requiredRole="instructor">
+                <EnrollStudents />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instructor/assessments/:assessmentId/generate-questions"
+            element={
+              <ProtectedRoute requiredRole="instructor">
+                <GenerateQuestions />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Course Management Routes */}
+          <Route
+            path="/instructor/courses"
+            element={
+              <ProtectedRoute requiredRole="instructor">
+                <CourseList />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instructor/courses/create"
+            element={
+              <ProtectedRoute requiredRole="instructor">
+                <CreateCourse />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instructor/courses/:courseId"
+            element={
+              <ProtectedRoute requiredRole="instructor">
+                <CourseDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instructor/courses/:courseId/edit"
+            element={
+              <ProtectedRoute requiredRole="instructor">
+                <EditCourse />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instructor/courses/:courseId/enroll"
+            element={
+              <ProtectedRoute requiredRole="instructor">
+                <EnrollStudentsInCourse />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Assignment Management Routes */}
+          <Route
+            path="/instructor/courses/:courseId/assignments/create"
+            element={
+              <ProtectedRoute requiredRole="instructor">
+                <CreateAssignment />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instructor/assignments/:assignmentId"
+            element={
+              <ProtectedRoute requiredRole="instructor">
+                <AssignmentDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instructor/assignments/:assignmentId/submissions/:submissionId/grade"
+            element={
+              <ProtectedRoute requiredRole="instructor">
+                <GradeSubmission />
               </ProtectedRoute>
             }
           />
@@ -134,8 +217,50 @@ function App() {
           <Route
             path="/student/dashboard"
             element={
-              <ProtectedRoute allowedRoles={["student"]}>
+              <ProtectedRoute requiredRole="student">
                 <StudentDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/student/courses"
+            element={
+              <ProtectedRoute requiredRole="student">
+                <StudentCourseList />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/student/courses/:courseId"
+            element={
+              <ProtectedRoute requiredRole="student">
+                <StudentCourseDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/student/assignments/:assignmentId/submit"
+            element={
+              <ProtectedRoute requiredRole="student">
+                <SubmitAssignment />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/student/submissions/:submissionId"
+            element={
+              <ProtectedRoute requiredRole="student">
+                <SubmissionDetail />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Student Assessment Routes */}
+          <Route
+            path="/student/assessments/:assessmentId/take"
+            element={
+              <ProtectedRoute requiredRole="student">
+                <TakeAssessment />
               </ProtectedRoute>
             }
           />
@@ -143,6 +268,25 @@ function App() {
           {/* Catch all route */}
           <Route path="*" element={<NotFound />} />
         </Routes>
+
+        {/* Toast notifications */}
+        <Toaster
+          position="top-right"
+          toastOptions={{
+            duration: 4000,
+            style: {
+              background: "#363636",
+              color: "#fff",
+            },
+            success: {
+              duration: 3000,
+              theme: {
+                primary: "green",
+                secondary: "black",
+              },
+            },
+          }}
+        />
       </div>
     </Router>
   )

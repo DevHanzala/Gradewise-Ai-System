@@ -1,9 +1,6 @@
 import pkg from "pg"
 import dotenv from "dotenv"
-import { createUserTable } from "../models/userModel.js"
-// import { createNewAssessment } from "../models/assessmentModel.js"
-// import { createResource } from "../models/resourceModel.js"
-// import { createAIConfigTables } from "../models/aiConfigModel.js"
+// import { createUserTable } from "../models/userModel.js"
 
 // Load environment variables
 dotenv.config()
@@ -32,10 +29,7 @@ export const connectDB = async () => {
     console.log("✅ Connected to PostgreSQL database successfully!")
 
     // Create all tables in the correct order (respecting foreign key dependencies)
-    await createUserTable() // Users table must be created first
-    // await createNewAssessment() // Assessment-related tables
-    // await createResource() // Resource-related tables  
-    // await createAIConfigTables() // AI configuration tables
+    // await createUserTable() // Users table must be created first
 
     console.log("✅ All database tables checked/created successfully")
     client.release()

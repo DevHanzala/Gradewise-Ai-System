@@ -3,309 +3,474 @@ import dotenv from "dotenv"
 
 dotenv.config()
 
-// Create a transporter using Gmail SMTP
+// Create transporter
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: process.env.EMAIL_USER, // Your Gmail address
-    pass: process.env.EMAIL_PASS, // Your Gmail App Password
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
   },
 })
 
 /**
- * Sends a verification email to the user.
- * @param {string} email - The user's email address.
- * @param {string} name - The user's name.
- * @param {string} token - The verification token.
+ * Send email with template support
  */
-export const sendVerificationEmail = async (email, name, token) => {
-  const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${token}`
-
-  const mailOptions = {
-    from: process.env.EMAIL_USER,
-    to: email,
-    subject: "Verify Your Email - Gradewise AI",
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
-        <div style="background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-          <div style="text-align: center; margin-bottom: 30px;">
-            <h1 style="color: #2563eb; margin: 0; font-size: 28px;">Gradewise AI</h1>
-            <p style="color: #6b7280; margin: 5px 0 0 0;">Learning Management System</p>
-          </div>
-          
-          <h2 style="color: #1f2937; margin-bottom: 20px;">Welcome, ${name}!</h2>
-          
-          <p style="color: #4b5563; line-height: 1.6; margin-bottom: 25px;">
-            Thank you for signing up for Gradewise AI. To complete your registration and start using our platform, 
-            please verify your email address by clicking the button below.
-          </p>
-          
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${verificationUrl}" 
-               style="background-color: #2563eb; color: white; padding: 12px 30px; text-decoration: none; 
-                      border-radius: 6px; font-weight: bold; display: inline-block;">
-              Verify Email Address
-            </a>
-          </div>
-          
-          <p style="color: #6b7280; font-size: 14px; line-height: 1.5; margin-top: 30px;">
-            If the button doesn't work, you can also copy and paste this link into your browser:<br>
-            <a href="${verificationUrl}" style="color: #2563eb; word-break: break-all;">${verificationUrl}</a>
-          </p>
-          
-          <div style="border-top: 1px solid #e5e7eb; margin-top: 30px; padding-top: 20px;">
-            <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-              This verification link will expire in 24 hours. If you didn't create an account with Gradewise AI, 
-              please ignore this email.
-            </p>
-          </div>
-        </div>
-      </div>
-    `,
-  }
-
+export const sendEmail = async (to, subject, htmlContent, textContent = null) => {
   try {
-    await transporter.sendMail(mailOptions)
-    console.log(`✅ Verification email sent to ${email}`)
-  } catch (error) {
-    console.error(`❌ Failed to send verification email to ${email}:`, error)
-    throw error
-  }
-}
-
-/**
- * Sends a password reset email to the user.
- * @param {string} email - The user's email address.
- * @param {string} name - The user's name.
- * @param {string} token - The reset token.
- */
-export const sendPasswordResetEmail = async (email, name, token) => {
-  const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${token}`
-
-  const mailOptions = {
-    from: process.env.EMAIL_USER,
-    to: email,
-    subject: "Reset Your Password - Gradewise AI",
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
-        <div style="background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-          <div style="text-align: center; margin-bottom: 30px;">
-            <h1 style="color: #2563eb; margin: 0; font-size: 28px;">Gradewise AI</h1>
-            <p style="color: #6b7280; margin: 5px 0 0 0;">Learning Management System</p>
-          </div>
-          
-          <h2 style="color: #1f2937; margin-bottom: 20px;">Password Reset Request</h2>
-          
-          <p style="color: #4b5563; line-height: 1.6; margin-bottom: 25px;">
-            Hi ${name},<br><br>
-            We received a request to reset your password for your Gradewise AI account. 
-            Click the button below to create a new password.
-          </p>
-          
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${resetUrl}" 
-               style="background-color: #dc2626; color: white; padding: 12px 30px; text-decoration: none; 
-                      border-radius: 6px; font-weight: bold; display: inline-block;">
-              Reset Password
-            </a>
-          </div>
-          
-          <p style="color: #6b7280; font-size: 14px; line-height: 1.5; margin-top: 30px;">
-            If the button doesn't work, you can also copy and paste this link into your browser:<br>
-            <a href="${resetUrl}" style="color: #dc2626; word-break: break-all;">${resetUrl}</a>
-          </p>
-          
-          <div style="border-top: 1px solid #e5e7eb; margin-top: 30px; padding-top: 20px;">
-            <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-              This password reset link will expire in 1 hour. If you didn't request a password reset, 
-              please ignore this email and your password will remain unchanged.
-            </p>
-          </div>
-        </div>
-      </div>
-    `,
-  }
-
-  try {
-    await transporter.sendMail(mailOptions)
-    console.log(`✅ Password reset email sent to ${email}`)
-  } catch (error) {
-    console.error(`❌ Failed to send password reset email to ${email}:`, error)
-    throw error
-  }
-}
-
-/**
- * Sends a role change notification email to the user.
- * @param {string} email - The user's email address.
- * @param {string} name - The user's name.
- * @param {string} oldRole - The user's previous role.
- * @param {string} newRole - The user's new role.
- * @param {string} changedBy - The name of the admin who made the change.
- */
-export const sendRoleChangeEmail = async (email, name, oldRole, newRole, changedBy) => {
-  const getRoleDisplayName = (role) => {
-    switch (role) {
-      case "super_admin":
-        return "Super Administrator"
-      case "admin":
-        return "Administrator"
-      case "instructor":
-        return "Instructor"
-      case "student":
-        return "Student"
-      default:
-        return role
+    const mailOptions = {
+      from: `"Gradewise AI" <${process.env.EMAIL_USER}>`,
+      to,
+      subject,
+      html: htmlContent,
+      text: textContent || htmlContent.replace(/<[^>]*>/g, ""), // Strip HTML for text version
     }
-  }
 
-  const getRoleColor = (role) => {
-    switch (role) {
-      case "super_admin":
-        return "#7c3aed"
-      case "admin":
-        return "#dc2626"
-      case "instructor":
-        return "#2563eb"
-      case "student":
-        return "#059669"
-      default:
-        return "#6b7280"
-    }
-  }
-
-  const oldRoleDisplay = getRoleDisplayName(oldRole)
-  const newRoleDisplay = getRoleDisplayName(newRole)
-  const newRoleColor = getRoleColor(newRole)
-
-  const mailOptions = {
-    from: process.env.EMAIL_USER,
-    to: email,
-    subject: "Your Role Has Been Updated - Gradewise AI",
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
-        <div style="background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-          <div style="text-align: center; margin-bottom: 30px;">
-            <h1 style="color: #2563eb; margin: 0; font-size: 28px;">Gradewise AI</h1>
-            <p style="color: #6b7280; margin: 5px 0 0 0;">Learning Management System</p>
-          </div>
-          
-          <h2 style="color: #1f2937; margin-bottom: 20px;">Role Update Notification</h2>
-          
-          <p style="color: #4b5563; line-height: 1.6; margin-bottom: 25px;">
-            Hi ${name},<br><br>
-            Your role in Gradewise AI has been updated by ${changedBy}.
-          </p>
-          
-          <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 25px 0;">
-            <div style="display: flex; align-items: center; justify-content: center; gap: 20px;">
-              <div style="text-align: center;">
-                <p style="margin: 0; color: #6b7280; font-size: 14px;">Previous Role</p>
-                <p style="margin: 5px 0 0 0; color: #374151; font-weight: bold;">${oldRoleDisplay}</p>
-              </div>
-              <div style="color: #9ca3af; font-size: 24px;">→</div>
-              <div style="text-align: center;">
-                <p style="margin: 0; color: #6b7280; font-size: 14px;">New Role</p>
-                <p style="margin: 5px 0 0 0; color: ${newRoleColor}; font-weight: bold; font-size: 18px;">${newRoleDisplay}</p>
-              </div>
-            </div>
-          </div>
-          
-          <p style="color: #4b5563; line-height: 1.6; margin-bottom: 25px;">
-            This change is effective immediately. You may need to log out and log back in to see the updated permissions and features available to your new role.
-          </p>
-          
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${process.env.FRONTEND_URL}/login" 
-               style="background-color: ${newRoleColor}; color: white; padding: 12px 30px; text-decoration: none; 
-                      border-radius: 6px; font-weight: bold; display: inline-block;">
-              Access Your Account
-            </a>
-          </div>
-          
-          <div style="border-top: 1px solid #e5e7eb; margin-top: 30px; padding-top: 20px;">
-            <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-              If you have any questions about this role change or need assistance with your new permissions, 
-              please contact your administrator.
-            </p>
-          </div>
-        </div>
-      </div>
-    `,
-  }
-
-  try {
-    await transporter.sendMail(mailOptions)
-    console.log(`✅ Role change email sent to ${email}`)
+    const result = await transporter.sendMail(mailOptions)
+    console.log(`Email sent successfully to ${to}:`, result.messageId)
+    return { success: true, messageId: result.messageId }
   } catch (error) {
-    console.error(`❌ Failed to send role change email to ${email}:`, error)
-    throw error
+    console.error(`Failed to send email to ${to}:`, error)
+    throw new Error(`Failed to send email: ${error.message}`)
   }
 }
 
 /**
- * Sends an enrollment notification email to the student.
- * @param {string} email - The student's email address.
- * @param {string} name - The student's name.
- * @param {string} assessmentTitle - The assessment title.
- * @param {string} instructorName - The instructor's name.
+ * Send verification email
  */
-export const sendEnrollmentEmail = async (email, name, assessmentTitle, instructorName) => {
-  const loginUrl = `${process.env.FRONTEND_URL}/login`
+export const sendVerificationEmail = async (email, name, verificationToken) => {
+  const verificationUrl = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`
 
-  const mailOptions = {
-    from: process.env.EMAIL_USER,
-    to: email,
-    subject: `You've been enrolled in an assessment - ${assessmentTitle}`,
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
-        <div style="background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-          <div style="text-align: center; margin-bottom: 30px;">
-            <h1 style="color: #2563eb; margin: 0; font-size: 28px;">Gradewise AI</h1>
-            <p style="color: #6b7280; margin: 5px 0 0 0;">Learning Management System</p>
+  const subject = "Verify Your Email - Gradewise AI"
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Email Verification</title>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #4f46e5; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+        .content { background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }
+        .button { display: inline-block; background: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 20px 0; }
+        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 14px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>Welcome to Gradewise AI!</h1>
+        </div>
+        <div class="content">
+          <h2>Hi ${name},</h2>
+          <p>Thank you for signing up for Gradewise AI! To complete your registration, please verify your email address by clicking the button below:</p>
+          
+          <div style="text-align: center;">
+            <a href="${verificationUrl}" class="button">Verify Email Address</a>
           </div>
           
-          <h2 style="color: #1f2937; margin-bottom: 20px;">New Assessment Enrollment</h2>
+          <p>If the button doesn't work, you can also copy and paste this link into your browser:</p>
+          <p style="word-break: break-all; color: #4f46e5;">${verificationUrl}</p>
           
-          <p style="color: #4b5563; line-height: 1.6; margin-bottom: 25px;">
-            Hi ${name},<br><br>
-            You have been enrolled in a new assessment by ${instructorName}.
-          </p>
+          <p><strong>This verification link will expire in 24 hours.</strong></p>
           
-          <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 25px 0;">
-            <h3 style="color: #2563eb; margin: 0 0 10px 0; font-size: 20px;">${assessmentTitle}</h3>
-            <p style="color: #6b7280; margin: 0; font-size: 14px;">Instructor: ${instructorName}</p>
-          </div>
+          <p>If you didn't create an account with Gradewise AI, you can safely ignore this email.</p>
           
-          <p style="color: #4b5563; line-height: 1.6; margin-bottom: 25px;">
-            You can now access this assessment from your student dashboard. Please log in to view the assessment details, 
-            including the duration, instructions, and start date.
-          </p>
-          
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${loginUrl}" 
-               style="background-color: #2563eb; color: white; padding: 12px 30px; text-decoration: none; 
-                      border-radius: 6px; font-weight: bold; display: inline-block;">
-              Access Assessment
-            </a>
-          </div>
-          
-          <div style="border-top: 1px solid #e5e7eb; margin-top: 30px; padding-top: 20px;">
-            <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-              Make sure to read the assessment instructions carefully before starting. 
-              If you have any questions, please contact your instructor.
-            </p>
-          </div>
+          <p>Best regards,<br>The Gradewise AI Team</p>
+        </div>
+        <div class="footer">
+          <p>© 2024 Gradewise AI. All rights reserved.</p>
         </div>
       </div>
-    `,
-  }
+    </body>
+    </html>
+  `
 
+  return await sendEmail(email, subject, htmlContent)
+}
+
+/**
+ * Send password reset email
+ */
+export const sendPasswordResetEmail = async (email, name, resetToken) => {
+  const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`
+
+  const subject = "Reset Your Password - Gradewise AI"
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Password Reset</title>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #dc2626; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+        .content { background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }
+        .button { display: inline-block; background: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 20px 0; }
+        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 14px; }
+        .warning { background: #fef3c7; border: 1px solid #f59e0b; padding: 15px; border-radius: 6px; margin: 20px 0; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>Password Reset Request</h1>
+        </div>
+        <div class="content">
+          <h2>Hi ${name},</h2>
+          <p>We received a request to reset your password for your Gradewise AI account. If you made this request, click the button below to reset your password:</p>
+          
+          <div style="text-align: center;">
+            <a href="${resetUrl}" class="button">Reset Password</a>
+          </div>
+          
+          <p>If the button doesn't work, you can also copy and paste this link into your browser:</p>
+          <p style="word-break: break-all; color: #dc2626;">${resetUrl}</p>
+          
+          <div class="warning">
+            <p><strong>⚠️ Important Security Information:</strong></p>
+            <ul>
+              <li>This reset link will expire in 1 hour</li>
+              <li>If you didn't request this reset, please ignore this email</li>
+              <li>Your password will remain unchanged until you create a new one</li>
+            </ul>
+          </div>
+          
+          <p>For security reasons, we recommend choosing a strong password that includes:</p>
+          <ul>
+            <li>At least 8 characters</li>
+            <li>A mix of uppercase and lowercase letters</li>
+            <li>Numbers and special characters</li>
+          </ul>
+          
+          <p>Best regards,<br>The Gradewise AI Team</p>
+        </div>
+        <div class="footer">
+          <p>© 2024 Gradewise AI. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `
+
+  return await sendEmail(email, subject, htmlContent)
+}
+
+/**
+ * Send welcome email after verification
+ */
+export const sendWelcomeEmail = async (email, name, role) => {
+  const dashboardUrl = `${process.env.FRONTEND_URL}/dashboard`
+
+  const subject = "Welcome to Gradewise AI - Let's Get Started!"
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Welcome to Gradewise AI</title>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #10b981; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+        .content { background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }
+        .button { display: inline-block; background: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 20px 0; }
+        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 14px; }
+        .feature-list { background: white; padding: 20px; border-radius: 6px; margin: 20px 0; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>🎉 Welcome to Gradewise AI!</h1>
+        </div>
+        <div class="content">
+          <h2>Hi ${name},</h2>
+          <p>Congratulations! Your email has been verified and your account is now active. Welcome to the future of AI-powered education!</p>
+          
+          <div style="text-align: center;">
+            <a href="${dashboardUrl}" class="button">Go to Dashboard</a>
+          </div>
+          
+          <div class="feature-list">
+            <h3>🚀 What you can do as a ${role}:</h3>
+            ${
+              role === "instructor"
+                ? `
+              <ul>
+                <li>Create and manage courses</li>
+                <li>Generate AI-powered assessments</li>
+                <li>Enroll students and track progress</li>
+                <li>Get detailed analytics and insights</li>
+                <li>Provide personalized feedback</li>
+              </ul>
+            `
+                : role === "student"
+                  ? `
+              <ul>
+                <li>Access your enrolled courses</li>
+                <li>Take AI-generated assessments</li>
+                <li>Track your learning progress</li>
+                <li>Receive personalized feedback</li>
+                <li>View detailed performance analytics</li>
+              </ul>
+            `
+                  : `
+              <ul>
+                <li>Manage all users and courses</li>
+                <li>Access platform analytics</li>
+                <li>Configure system settings</li>
+                <li>Monitor platform performance</li>
+              </ul>
+            `
+            }
+          </div>
+          
+          <p><strong>Need help getting started?</strong></p>
+          <ul>
+            <li>Check out our <a href="${process.env.FRONTEND_URL}/help">Help Center</a></li>
+            <li>Watch our <a href="${process.env.FRONTEND_URL}/tutorials">Video Tutorials</a></li>
+            <li>Contact our support team at support@gradewise.ai</li>
+          </ul>
+          
+          <p>We're excited to have you on board and can't wait to see what you'll achieve with Gradewise AI!</p>
+          
+          <p>Best regards,<br>The Gradewise AI Team</p>
+        </div>
+        <div class="footer">
+          <p>© 2024 Gradewise AI. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `
+
+  return await sendEmail(email, subject, htmlContent)
+}
+
+/**
+ * Send role change notification email
+ */
+export const sendRoleChangeEmail = async (email, name, oldRole, newRole) => {
+  const dashboardUrl = `${process.env.FRONTEND_URL}/dashboard`
+
+  const subject = `Your Role Has Been Updated - Gradewise AI`
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Role Update Notification</title>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #3b82f6; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+        .content { background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }
+        .button { display: inline-block; background: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 20px 0; }
+        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 14px; }
+        .role-change { background: #dbeafe; border: 1px solid #3b82f6; padding: 15px; border-radius: 6px; margin: 20px 0; text-align: center; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>Role Update Notification</h1>
+        </div>
+        <div class="content">
+          <h2>Hi ${name},</h2>
+          <p>Your role in Gradewise AI has been updated by an administrator.</p>
+          
+          <div class="role-change">
+            <p><strong>Role Change:</strong></p>
+            <p>${oldRole.charAt(0).toUpperCase() + oldRole.slice(1)} → ${newRole.charAt(0).toUpperCase() + newRole.slice(1)}</p>
+          </div>
+          
+          <p>This change gives you access to new features and capabilities. Please log in to your dashboard to explore your updated permissions.</p>
+          
+          <div style="text-align: center;">
+            <a href="${dashboardUrl}" class="button">Go to Dashboard</a>
+          </div>
+          
+          <p>If you have any questions about this change or need help with your new role, please contact our support team.</p>
+          
+          <p>Best regards,<br>The Gradewise AI Team</p>
+        </div>
+        <div class="footer">
+          <p>© 2024 Gradewise AI. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `
+
+  return await sendEmail(email, subject, htmlContent)
+}
+
+/**
+ * Send assessment enrollment email to students
+ */
+export const sendAssessmentEnrollmentEmail = async (email, name, assessmentTitle, courseTitle, dueDate) => {
+  const dashboardUrl = `${process.env.FRONTEND_URL}/dashboard`
+
+  const subject = `New Assessment Available: ${assessmentTitle}`
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>New Assessment Available</title>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #8b5cf6; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+        .content { background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }
+        .button { display: inline-block; background: #8b5cf6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 20px 0; }
+        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 14px; }
+        .assessment-info { background: white; padding: 20px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #8b5cf6; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>📝 New Assessment Available</h1>
+        </div>
+        <div class="content">
+          <h2>Hi ${name},</h2>
+          <p>You have been enrolled in a new assessment. Here are the details:</p>
+          
+          <div class="assessment-info">
+            <h3>${assessmentTitle}</h3>
+            <p><strong>Course:</strong> ${courseTitle}</p>
+            <p><strong>Due Date:</strong> ${new Date(dueDate).toLocaleDateString("en-US", {
+              weekday: "long",
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}</p>
+          </div>
+          
+          <p>You can access this assessment from your student dashboard. Make sure to complete it before the due date!</p>
+          
+          <div style="text-align: center;">
+            <a href="${dashboardUrl}" class="button">View Assessment</a>
+          </div>
+          
+          <p><strong>Tips for success:</strong></p>
+          <ul>
+            <li>Read all instructions carefully before starting</li>
+            <li>Ensure you have a stable internet connection</li>
+            <li>Complete the assessment in a quiet environment</li>
+            <li>Don't wait until the last minute - start early!</li>
+          </ul>
+          
+          <p>Good luck with your assessment!</p>
+          
+          <p>Best regards,<br>The Gradewise AI Team</p>
+        </div>
+        <div class="footer">
+          <p>© 2024 Gradewise AI. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `
+
+  return await sendEmail(email, subject, htmlContent)
+}
+
+/**
+ * Send assessment reminder email
+ */
+export const sendAssessmentReminderEmail = async (email, name, assessmentTitle, dueDate, hoursRemaining) => {
+  const dashboardUrl = `${process.env.FRONTEND_URL}/dashboard`
+
+  const subject = `⏰ Reminder: ${assessmentTitle} Due Soon`
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Assessment Reminder</title>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #f59e0b; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+        .content { background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }
+        .button { display: inline-block; background: #f59e0b; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 20px 0; }
+        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 14px; }
+        .urgent { background: #fef3c7; border: 1px solid #f59e0b; padding: 15px; border-radius: 6px; margin: 20px 0; text-align: center; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>⏰ Assessment Reminder</h1>
+        </div>
+        <div class="content">
+          <h2>Hi ${name},</h2>
+          <p>This is a friendly reminder that your assessment is due soon!</p>
+          
+          <div class="urgent">
+            <h3>${assessmentTitle}</h3>
+            <p><strong>Due:</strong> ${new Date(dueDate).toLocaleDateString("en-US", {
+              weekday: "long",
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}</p>
+            <p><strong>Time Remaining:</strong> ${hoursRemaining} hours</p>
+          </div>
+          
+          <p>Don't miss the deadline! Complete your assessment now to ensure your submission is recorded.</p>
+          
+          <div style="text-align: center;">
+            <a href="${dashboardUrl}" class="button">Take Assessment Now</a>
+          </div>
+          
+          <p><strong>Last-minute checklist:</strong></p>
+          <ul>
+            <li>✅ Stable internet connection</li>
+            <li>✅ Quiet study environment</li>
+            <li>✅ Sufficient time to complete</li>
+            <li>✅ All required materials ready</li>
+          </ul>
+          
+          <p>Best of luck!</p>
+          
+          <p>Best regards,<br>The Gradewise AI Team</p>
+        </div>
+        <div class="footer">
+          <p>© 2024 Gradewise AI. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `
+
+  return await sendEmail(email, subject, htmlContent)
+}
+
+/**
+ * Test email configuration
+ */
+export const testEmailConfiguration = async () => {
   try {
-    await transporter.sendMail(mailOptions)
-    console.log(`✅ Enrollment email sent to ${email}`)
+    await transporter.verify()
+    console.log("Email configuration is valid")
+    return { success: true, message: "Email configuration is valid" }
   } catch (error) {
-    console.error(`❌ Failed to send enrollment email to ${email}:`, error)
-    throw error
+    console.error("Email configuration error:", error)
+    throw new Error(`Email configuration error: ${error.message}`)
   }
 }

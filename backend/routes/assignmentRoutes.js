@@ -1,41 +1,33 @@
+// backend/routes/assignmentRoutes.js
 import { Router } from "express"
-import { protect, authorizeRoles } from "../middleware/authMiddleware.js"
 import {
-  createAssessment,
-  getInstructorAssessments,
-  getAssessmentById,
-  updateAssessment,
-  deleteAssessment,
-  enrollStudentInAssessment,
-  getAssessmentStudents,
-  getStudentAssessments,
-  getAllAssessments,
-  unenrollStudentFromAssessment,
-} from "../controllers/assessmentController.js"
+  createNewAssignment,
+  getCourseAssignments,
+  getAssignmentById,
+  updateExistingAssignment,
+  deleteExistingAssignment,
+  getStudentAssignmentsList,
+  getAllAssignmentsAdmin,
+  getInstructorAssignmentsList,
+} from "../controllers/assignmentController.js"
+import { protect, authorizeRoles } from "../middleware/authMiddleware.js"
 
 const router = Router()
 
-// Assessment management routes (Instructor only)
-router.post("/", protect, authorizeRoles("instructor", "admin"), createAssessment)
-router.get("/instructor", protect, authorizeRoles("instructor"), getInstructorAssessments)
-router.get("/:assessmentId", protect, getAssessmentById)
-router.put("/:assessmentId", protect, authorizeRoles("instructor", "admin"), updateAssessment)
-router.delete("/:assessmentId", protect, authorizeRoles("instructor", "admin"), deleteAssessment)
-
-// Student enrollment routes
-router.post("/:assessmentId/enroll", protect, authorizeRoles("instructor", "admin"), enrollStudentInAssessment)
-router.get("/:assessmentId/students", protect, authorizeRoles("instructor", "admin"), getAssessmentStudents)
-router.delete(
-  "/:assessmentId/students/:studentId",
-  protect,
-  authorizeRoles("instructor", "admin"),
-  unenrollStudentFromAssessment,
-)
+// Assignment management routes
+router.post("/", protect, authorizeRoles("instructor", "admin"), createNewAssignment)
+router.get("/course/:courseId", protect, getCourseAssignments)
+router.get("/:assignmentId", protect, getAssignmentById)
+router.put("/:assignmentId", protect, authorizeRoles("instructor", "admin"), updateExistingAssignment)
+router.delete("/:assignmentId", protect, authorizeRoles("instructor", "admin"), deleteExistingAssignment)
 
 // Student routes
-router.get("/student/enrolled", protect, authorizeRoles("student"), getStudentAssessments)
+router.get("/student/list", protect, authorizeRoles("student"), getStudentAssignmentsList)
+
+// Instructor routes
+router.get("/instructor/list", protect, authorizeRoles("instructor"), getInstructorAssignmentsList)
 
 // Admin routes
-router.get("/admin/all", protect, authorizeRoles("admin"), getAllAssessments)
+router.get("/admin/all", protect, authorizeRoles("admin"), getAllAssignmentsAdmin)
 
 export default router
