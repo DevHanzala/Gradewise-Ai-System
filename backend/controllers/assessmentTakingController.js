@@ -63,7 +63,22 @@ export const startAttempt = async (req, res) => {
           ORDER BY qb.block_order NULLS LAST, gq.question_order ASC, gq.id ASC`,
         [assessmentId]
       )
-      questions = questionsResult.rows || []
+      const raw = questionsResult.rows || []
+      // Normalize to student UI shape
+      questions = raw.map((q) => ({
+        id: q.id,
+        question: q.question_text,
+        type: q.question_type,
+        options: Array.isArray(q.options) ? q.options : (q.options ? q.options : []),
+        correct_answer: q.correct_answer ?? null,
+        explanation: q.explanation ?? null,
+        marks: q.marks || 1,
+        question_number: q.question_order || 0,
+        block_title: q.block_title || null,
+      }))
+      if (questions.length === 0) {
+        console.warn(`⚠️ No questions found for assessment ${assessmentId}. Ensure AI generation was saved.`)
+      }
     } catch (qErr) {
       console.warn("⚠️ Unable to load generated questions (may not exist yet):", qErr.message)
       questions = []

@@ -436,3 +436,4 @@ export const getPopularTags = async (instructorId, limit = 10) => {
     throw error
   }
 }
+

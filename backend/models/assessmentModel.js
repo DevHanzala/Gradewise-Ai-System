@@ -979,24 +979,43 @@ export const storeQuestionBlocks = async (assessmentId, questionBlocks, instruct
   try {
     console.log(`📝 Storing ${questionBlocks.length} question blocks for assessment ${assessmentId}`)
     
-    // Delete existing question blocks for this assessment
+    // Ensure generated_questions table exists
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS generated_questions (
+        id SERIAL PRIMARY KEY,
+        block_id INTEGER NOT NULL REFERENCES question_blocks(id) ON DELETE CASCADE,
+        question_order INTEGER NOT NULL DEFAULT 1,
+        question_text TEXT NOT NULL,
+        question_type VARCHAR(50) NOT NULL,
+        options JSONB,
+        correct_answer JSONB,
+        explanation TEXT,
+        marks INTEGER DEFAULT 1,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
+    // Delete existing question blocks and their generated questions (cascade via FK)
     await db.query("DELETE FROM question_blocks WHERE assessment_id = $1", [assessmentId])
     
-    // Insert new question blocks
+    let totalQuestions = 0
+
+    // Insert new question blocks (and nested questions if provided)
     for (let i = 0; i < questionBlocks.length; i++) {
       const block = questionBlocks[i]
-      const query = `
+      const insertBlockQuery = `
         INSERT INTO question_blocks (
           assessment_id, block_title, block_description, question_count, 
           marks_per_question, difficulty_level, question_type, topics, block_order
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        RETURNING id
       `
       
-      const values = [
+      const blockValues = [
         assessmentId,
         block.block_title,
         block.block_description || null,
-        block.question_count || 1,
+        block.question_count || (Array.isArray(block.questions) ? block.questions.length : 1),
         block.marks_per_question || 1,
         block.difficulty_level || 'medium',
         block.question_type || 'multiple_choice',
@@ -1004,11 +1023,41 @@ export const storeQuestionBlocks = async (assessmentId, questionBlocks, instruct
         i + 1
       ]
       
-      await db.query(query, values)
+      const insertedBlock = await db.query(insertBlockQuery, blockValues)
+      const blockId = insertedBlock.rows[0].id
+
+      // If questions provided in payload, persist them to generated_questions
+      if (Array.isArray(block.questions) && block.questions.length > 0) {
+        for (let qIndex = 0; qIndex < block.questions.length; qIndex++) {
+          const q = block.questions[qIndex]
+          const insertQuestionQuery = `
+            INSERT INTO generated_questions (
+              block_id, question_order, question_text, question_type, options, correct_answer, explanation, marks
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          `
+
+          const questionOptions = q.options ? JSON.stringify(q.options) : null
+          const correctAnswer = q.correct_answer !== undefined ? JSON.stringify(q.correct_answer) : null
+
+          const insertQuestionValues = [
+            blockId,
+            q.question_order || qIndex + 1,
+            q.question_text || q.question || "",
+            q.question_type || q.type || 'multiple_choice',
+            questionOptions,
+            correctAnswer,
+            q.explanation || null,
+            q.marks || block.marks_per_question || 1
+          ]
+
+          await db.query(insertQuestionQuery, insertQuestionValues)
+          totalQuestions++
+        }
+      }
     }
     
-    console.log(`✅ Successfully stored ${questionBlocks.length} question blocks`)
-    return true
+    console.log(`✅ Successfully stored ${questionBlocks.length} blocks and ${totalQuestions} questions`)
+    return { blocks: questionBlocks.length, questions: totalQuestions }
   } catch (error) {
     console.error("❌ Error storing question blocks:", error)
     throw error

@@ -36,3 +36,4 @@ router.get("/stats", getStats)
 router.get("/tags", getTags)
 
 export default router
+

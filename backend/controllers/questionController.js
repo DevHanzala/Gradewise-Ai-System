@@ -73,24 +73,33 @@ export const getQuestionsByAssessmentHandler = async (req, res) => {
 
     console.log(`📋 Fetching questions for assessment ${assessmentId} by user ${userId} (${userRole})`)
 
-    // Check if user has access to this assessment
+    // Students must be enrolled; instructors must own the assessment
     if (userRole === "instructor") {
-      // For instructors, check if they own the assessment
       const assessmentCheck = await db.query(
         "SELECT id FROM assessments WHERE id = $1 AND instructor_id = $2",
         [assessmentId, userId]
       )
-      
       if (assessmentCheck.rows.length === 0) {
         return res.status(403).json({
           success: false,
           message: "Access denied. You can only view questions for your own assessments."
         })
       }
+    } else if (userRole === "student") {
+      const enrolledCheck = await db.query(
+        "SELECT 1 FROM assessment_enrollments WHERE assessment_id = $1 AND student_id = $2",
+        [assessmentId, userId]
+      )
+      if (enrolledCheck.rows.length === 0) {
+        return res.status(403).json({
+          success: false,
+          message: "You are not enrolled in this assessment."
+        })
+      }
     }
 
-    // Get question blocks for the assessment with safe column selection
-    const questionBlocksQuery = `
+    // Get blocks
+    const blocksResult = await db.query(`
       SELECT 
         id,
         block_title,
@@ -105,36 +114,54 @@ export const getQuestionsByAssessmentHandler = async (req, res) => {
       FROM question_blocks 
       WHERE assessment_id = $1 
       ORDER BY COALESCE(block_order, 1) ASC, created_at ASC
-    `
-    
-    const questionBlocksResult = await db.query(questionBlocksQuery, [assessmentId])
-    const questionBlocks = questionBlocksResult.rows
+    `, [assessmentId])
 
-    console.log(`✅ Found ${questionBlocks.length} question blocks for assessment ${assessmentId}`)
+    const blocks = blocksResult.rows
+
+    // Attach generated questions for each block
+    const blocksWithQuestions = []
+    for (const block of blocks) {
+      const questionsResult = await db.query(`
+        SELECT id, question_order, question_text, question_type, options, correct_answer, explanation, marks
+          FROM generated_questions
+         WHERE block_id = $1
+         ORDER BY question_order ASC, id ASC
+      `, [block.id])
+
+      const questions = questionsResult.rows.map(q => ({
+        id: q.id,
+        question_order: q.question_order,
+        question_text: q.question_text,
+        question_type: q.question_type,
+        options: q.options || [],
+        correct_answer: q.correct_answer || null,
+        explanation: q.explanation || null,
+        marks: q.marks || block.marks_per_question || 1
+      }))
+
+      blocksWithQuestions.push({ ...block, questions })
+    }
+
+    console.log(`✅ Found ${blocksWithQuestions.length} question blocks for assessment ${assessmentId}`)
 
     res.status(200).json({
       success: true,
       message: "Questions retrieved successfully",
-      data: {
-        assessment_id: assessmentId,
-        question_blocks: questionBlocks,
-        total_blocks: questionBlocks.length
-      }
+      data: blocksWithQuestions
     })
 
   } catch (error) {
     console.error("❌ Get questions by assessment error:", error)
-    
-    // Check if it's a column missing error
+
     if (error.code === '42703') {
       console.log("🔧 Column missing error detected. Please run the table fix script.")
       return res.status(500).json({
         success: false,
         message: "Database schema needs to be updated. Please contact administrator.",
-        error: "Missing database column. Run: node scripts/fixQuestionBlocksTable.js"
+        error: "Missing database column. Run: node scripts/fixAllIssues.js"
       })
     }
-    
+
     res.status(500).json({
       success: false,
       message: "Failed to retrieve questions",

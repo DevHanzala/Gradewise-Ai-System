@@ -28,3 +28,4 @@ router.get("/:assessmentId/stats", getEnrollmentStatistics)
 router.get("/:assessmentId/export", exportEnrollmentCSV)
 
 export default router
+
