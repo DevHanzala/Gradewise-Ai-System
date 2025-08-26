@@ -29,9 +29,11 @@ const useStudentAssessmentStore = create((set, get) => ({
       set({ loading: true, error: null })
 
       const token = localStorage.getItem("token")
-      const response = await axios.get(`${API_URL}/assessments/student/${assessmentId}/start`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const response = await axios.post(
+        `${API_URL}/assessments/${assessmentId}/start`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
 
       if (response.data.success) {
         const { assessment, questions } = response.data.data

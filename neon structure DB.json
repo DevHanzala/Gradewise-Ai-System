@@ -1,0 +1,761 @@
+[{
+  "table_name": "student_assessments",
+  "column_name": "assessment_id",
+  "data_type": "integer"
+}, {
+  "table_name": "submissions",
+  "column_name": "student_id",
+  "data_type": "integer"
+}, {
+  "table_name": "submissions",
+  "column_name": "assignment_id",
+  "data_type": "integer"
+}, {
+  "table_name": "questions",
+  "column_name": "updated_at",
+  "data_type": "timestamp without time zone"
+}, {
+  "table_name": "question_bank",
+  "column_name": "id",
+  "data_type": "integer"
+}, {
+  "table_name": "question_bank",
+  "column_name": "instructor_id",
+  "data_type": "integer"
+}, {
+  "table_name": "question_bank",
+  "column_name": "options",
+  "data_type": "jsonb"
+}, {
+  "table_name": "question_bank",
+  "column_name": "marks_per_question",
+  "data_type": "integer"
+}, {
+  "table_name": "question_bank",
+  "column_name": "created_at",
+  "data_type": "timestamp without time zone"
+}, {
+  "table_name": "question_bank",
+  "column_name": "updated_at",
+  "data_type": "timestamp without time zone"
+}, {
+  "table_name": "question_assignments",
+  "column_name": "id",
+  "data_type": "integer"
+}, {
+  "table_name": "question_assignments",
+  "column_name": "question_bank_id",
+  "data_type": "integer"
+}, {
+  "table_name": "question_assignments",
+  "column_name": "assessment_id",
+  "data_type": "integer"
+}, {
+  "table_name": "question_assignments",
+  "column_name": "assigned_at",
+  "data_type": "timestamp without time zone"
+}, {
+  "table_name": "courses",
+  "column_name": "id",
+  "data_type": "integer"
+}, {
+  "table_name": "courses",
+  "column_name": "instructor_id",
+  "data_type": "integer"
+}, {
+  "table_name": "courses",
+  "column_name": "created_at",
+  "data_type": "timestamp with time zone"
+}, {
+  "table_name": "students_courses",
+  "column_name": "id",
+  "data_type": "integer"
+}, {
+  "table_name": "students_courses",
+  "column_name": "student_id",
+  "data_type": "integer"
+}, {
+  "table_name": "students_courses",
+  "column_name": "course_id",
+  "data_type": "integer"
+}, {
+  "table_name": "students_courses",
+  "column_name": "enrolled_at",
+  "data_type": "timestamp with time zone"
+}, {
+  "table_name": "assessment_attempts",
+  "column_name": "id",
+  "data_type": "integer"
+}, {
+  "table_name": "assessment_attempts",
+  "column_name": "student_id",
+  "data_type": "integer"
+}, {
+  "table_name": "assessment_attempts",
+  "column_name": "assessment_id",
+  "data_type": "integer"
+}, {
+  "table_name": "assessment_attempts",
+  "column_name": "attempt_number",
+  "data_type": "integer"
+}, {
+  "table_name": "assessment_attempts",
+  "column_name": "started_at",
+  "data_type": "timestamp with time zone"
+}, {
+  "table_name": "assessment_attempts",
+  "column_name": "submitted_at",
+  "data_type": "timestamp with time zone"
+}, {
+  "table_name": "assessment_attempts",
+  "column_name": "time_taken",
+  "data_type": "integer"
+}, {
+  "table_name": "assessment_attempts",
+  "column_name": "total_score",
+  "data_type": "numeric"
+}, {
+  "table_name": "assessment_attempts",
+  "column_name": "max_score",
+  "data_type": "numeric"
+}, {
+  "table_name": "assessment_attempts",
+  "column_name": "percentage",
+  "data_type": "numeric"
+}, {
+  "table_name": "assessment_attempts",
+  "column_name": "grade",
+  "data_type": "integer"
+}, {
+  "table_name": "assessment_attempts",
+  "column_name": "created_at",
+  "data_type": "timestamp without time zone"
+}, {
+  "table_name": "assessment_attempts",
+  "column_name": "start_time",
+  "data_type": "timestamp without time zone"
+}, {
+  "table_name": "assessment_attempts",
+  "column_name": "time_limit",
+  "data_type": "integer"
+}, {
+  "table_name": "generated_questions",
+  "column_name": "id",
+  "data_type": "integer"
+}, {
+  "table_name": "generated_questions",
+  "column_name": "attempt_id",
+  "data_type": "integer"
+}, {
+  "table_name": "generated_questions",
+  "column_name": "block_id",
+  "data_type": "integer"
+}, {
+  "table_name": "generated_questions",
+  "column_name": "options",
+  "data_type": "jsonb"
+}, {
+  "table_name": "generated_questions",
+  "column_name": "marks",
+  "data_type": "numeric"
+}, {
+  "table_name": "generated_questions",
+  "column_name": "question_order",
+  "data_type": "integer"
+}, {
+  "table_name": "generated_questions",
+  "column_name": "created_at",
+  "data_type": "timestamp with time zone"
+}, {
+  "table_name": "student_answers",
+  "column_name": "id",
+  "data_type": "integer"
+}, {
+  "table_name": "student_answers",
+  "column_name": "attempt_id",
+  "data_type": "integer"
+}, {
+  "table_name": "student_answers",
+  "column_name": "question_id",
+  "data_type": "integer"
+}, {
+  "table_name": "student_answers",
+  "column_name": "is_correct",
+  "data_type": "boolean"
+}, {
+  "table_name": "student_answers",
+  "column_name": "marks_awarded",
+  "data_type": "numeric"
+}, {
+  "table_name": "student_answers",
+  "column_name": "answered_at",
+  "data_type": "timestamp with time zone"
+}, {
+  "table_name": "assessments",
+  "column_name": "id",
+  "data_type": "integer"
+}, {
+  "table_name": "assessments",
+  "column_name": "instructor_id",
+  "data_type": "integer"
+}, {
+  "table_name": "assessments",
+  "column_name": "duration",
+  "data_type": "integer"
+}, {
+  "table_name": "assessments",
+  "column_name": "total_marks",
+  "data_type": "integer"
+}, {
+  "table_name": "assessments",
+  "column_name": "passing_marks",
+  "data_type": "integer"
+}, {
+  "table_name": "assessments",
+  "column_name": "is_published",
+  "data_type": "boolean"
+}, {
+  "table_name": "assessments",
+  "column_name": "start_date",
+  "data_type": "timestamp without time zone"
+}, {
+  "table_name": "assessments",
+  "column_name": "end_date",
+  "data_type": "timestamp without time zone"
+}, {
+  "table_name": "assessments",
+  "column_name": "created_at",
+  "data_type": "timestamp without time zone"
+}, {
+  "table_name": "assessments",
+  "column_name": "updated_at",
+  "data_type": "timestamp without time zone"
+}, {
+  "table_name": "assessments",
+  "column_name": "course_id",
+  "data_type": "integer"
+}, {
+  "table_name": "assessments",
+  "column_name": "max_attempts",
+  "data_type": "integer"
+}, {
+  "table_name": "ai_generation_audit_logs",
+  "column_name": "id",
+  "data_type": "integer"
+}, {
+  "table_name": "ai_generation_audit_logs",
+  "column_name": "assessment_id",
+  "data_type": "integer"
+}, {
+  "table_name": "ai_generation_audit_logs",
+  "column_name": "instructor_id",
+  "data_type": "integer"
+}, {
+  "table_name": "ai_generation_audit_logs",
+  "column_name": "question_count",
+  "data_type": "integer"
+}, {
+  "table_name": "ai_generation_audit_logs",
+  "column_name": "questions_generated",
+  "data_type": "integer"
+}, {
+  "table_name": "ai_generation_audit_logs",
+  "column_name": "created_at",
+  "data_type": "timestamp with time zone"
+}, {
+  "table_name": "ai_generation_audit_logs",
+  "column_name": "updated_at",
+  "data_type": "timestamp with time zone"
+}, {
+  "table_name": "ai_generation_audit_logs",
+  "column_name": "generation_time",
+  "data_type": "integer"
+}, {
+  "table_name": "submissions",
+  "column_name": "submitted_at",
+  "data_type": "timestamp with time zone"
+}, {
+  "table_name": "assignments",
+  "column_name": "id",
+  "data_type": "integer"
+}, {
+  "table_name": "assignments",
+  "column_name": "course_id",
+  "data_type": "integer"
+}, {
+  "table_name": "assignments",
+  "column_name": "created_by",
+  "data_type": "integer"
+}, {
+  "table_name": "assignments",
+  "column_name": "due_date",
+  "data_type": "timestamp with time zone"
+}, {
+  "table_name": "assignments",
+  "column_name": "created_at",
+  "data_type": "timestamp with time zone"
+}, {
+  "table_name": "assignments",
+  "column_name": "assessment_id",
+  "data_type": "integer"
+}, {
+  "table_name": "users",
+  "column_name": "id",
+  "data_type": "integer"
+}, {
+  "table_name": "users",
+  "column_name": "verified",
+  "data_type": "boolean"
+}, {
+  "table_name": "users",
+  "column_name": "reset_token_expires",
+  "data_type": "timestamp without time zone"
+}, {
+  "table_name": "users",
+  "column_name": "created_at",
+  "data_type": "timestamp with time zone"
+}, {
+  "table_name": "users",
+  "column_name": "updated_at",
+  "data_type": "timestamp without time zone"
+}, {
+  "table_name": "resources",
+  "column_name": "id",
+  "data_type": "integer"
+}, {
+  "table_name": "resources",
+  "column_name": "file_size",
+  "data_type": "bigint"
+}, {
+  "table_name": "resources",
+  "column_name": "content_type",
+  "data_type": "USER-DEFINED"
+}, {
+  "table_name": "resources",
+  "column_name": "visibility",
+  "data_type": "USER-DEFINED"
+}, {
+  "table_name": "resources",
+  "column_name": "uploaded_by",
+  "data_type": "integer"
+}, {
+  "table_name": "resources",
+  "column_name": "vectorized",
+  "data_type": "boolean"
+}, {
+  "table_name": "resources",
+  "column_name": "created_at",
+  "data_type": "timestamp with time zone"
+}, {
+  "table_name": "assessment_resources",
+  "column_name": "id",
+  "data_type": "integer"
+}, {
+  "table_name": "assessment_resources",
+  "column_name": "assessment_id",
+  "data_type": "integer"
+}, {
+  "table_name": "assessment_resources",
+  "column_name": "resource_id",
+  "data_type": "integer"
+}, {
+  "table_name": "assessment_resources",
+  "column_name": "created_at",
+  "data_type": "timestamp with time zone"
+}, {
+  "table_name": "student_assessments",
+  "column_name": "id",
+  "data_type": "integer"
+}, {
+  "table_name": "student_assessments",
+  "column_name": "student_id",
+  "data_type": "integer"
+}, {
+  "table_name": "submissions",
+  "column_name": "id",
+  "data_type": "integer"
+}, {
+  "table_name": "student_assessments",
+  "column_name": "enrolled_at",
+  "data_type": "timestamp with time zone"
+}, {
+  "table_name": "question_blocks",
+  "column_name": "id",
+  "data_type": "integer"
+}, {
+  "table_name": "question_blocks",
+  "column_name": "assessment_id",
+  "data_type": "integer"
+}, {
+  "table_name": "question_blocks",
+  "column_name": "question_count",
+  "data_type": "integer"
+}, {
+  "table_name": "question_blocks",
+  "column_name": "marks_per_question",
+  "data_type": "integer"
+}, {
+  "table_name": "question_blocks",
+  "column_name": "created_at",
+  "data_type": "timestamp without time zone"
+}, {
+  "table_name": "question_blocks",
+  "column_name": "block_order",
+  "data_type": "integer"
+}, {
+  "table_name": "assessment_enrollments",
+  "column_name": "id",
+  "data_type": "integer"
+}, {
+  "table_name": "assessment_enrollments",
+  "column_name": "assessment_id",
+  "data_type": "integer"
+}, {
+  "table_name": "assessment_enrollments",
+  "column_name": "student_id",
+  "data_type": "integer"
+}, {
+  "table_name": "assessment_enrollments",
+  "column_name": "enrolled_at",
+  "data_type": "timestamp without time zone"
+}, {
+  "table_name": "assessment_enrollments",
+  "column_name": "score",
+  "data_type": "integer"
+}, {
+  "table_name": "assessment_enrollments",
+  "column_name": "completed_at",
+  "data_type": "timestamp without time zone"
+}, {
+  "table_name": "ai_configurations",
+  "column_name": "id",
+  "data_type": "integer"
+}, {
+  "table_name": "ai_configurations",
+  "column_name": "is_active",
+  "data_type": "boolean"
+}, {
+  "table_name": "ai_configurations",
+  "column_name": "cost_per_token",
+  "data_type": "numeric"
+}, {
+  "table_name": "ai_configurations",
+  "column_name": "created_by",
+  "data_type": "integer"
+}, {
+  "table_name": "ai_configurations",
+  "column_name": "created_at",
+  "data_type": "timestamp with time zone"
+}, {
+  "table_name": "api_usage_logs",
+  "column_name": "id",
+  "data_type": "integer"
+}, {
+  "table_name": "api_usage_logs",
+  "column_name": "tokens_used",
+  "data_type": "integer"
+}, {
+  "table_name": "api_usage_logs",
+  "column_name": "cost",
+  "data_type": "numeric"
+}, {
+  "table_name": "api_usage_logs",
+  "column_name": "user_id",
+  "data_type": "integer"
+}, {
+  "table_name": "api_usage_logs",
+  "column_name": "assessment_id",
+  "data_type": "integer"
+}, {
+  "table_name": "api_usage_logs",
+  "column_name": "created_at",
+  "data_type": "timestamp with time zone"
+}, {
+  "table_name": "questions",
+  "column_name": "id",
+  "data_type": "integer"
+}, {
+  "table_name": "questions",
+  "column_name": "assessment_id",
+  "data_type": "integer"
+}, {
+  "table_name": "questions",
+  "column_name": "options",
+  "data_type": "json"
+}, {
+  "table_name": "questions",
+  "column_name": "marks",
+  "data_type": "integer"
+}, {
+  "table_name": "questions",
+  "column_name": "question_order",
+  "data_type": "integer"
+}, {
+  "table_name": "questions",
+  "column_name": "is_active",
+  "data_type": "boolean"
+}, {
+  "table_name": "questions",
+  "column_name": "created_at",
+  "data_type": "timestamp without time zone"
+}, {
+  "table_name": "submissions",
+  "column_name": "submission_file_url",
+  "data_type": "character varying"
+}, {
+  "table_name": "submissions",
+  "column_name": "grade",
+  "data_type": "character varying"
+}, {
+  "table_name": "submissions",
+  "column_name": "feedback",
+  "data_type": "text"
+}, {
+  "table_name": "ai_configurations",
+  "column_name": "api_key",
+  "data_type": "character varying"
+}, {
+  "table_name": "ai_configurations",
+  "column_name": "model_name",
+  "data_type": "character varying"
+}, {
+  "table_name": "assignments",
+  "column_name": "title",
+  "data_type": "character varying"
+}, {
+  "table_name": "assignments",
+  "column_name": "description",
+  "data_type": "text"
+}, {
+  "table_name": "ai_generation_audit_logs",
+  "column_name": "question_type",
+  "data_type": "character varying"
+}, {
+  "table_name": "ai_generation_audit_logs",
+  "column_name": "difficulty_level",
+  "data_type": "character varying"
+}, {
+  "table_name": "ai_generation_audit_logs",
+  "column_name": "topics",
+  "data_type": "ARRAY"
+}, {
+  "table_name": "assessment_attempts",
+  "column_name": "status",
+  "data_type": "character varying"
+}, {
+  "table_name": "assessment_attempts",
+  "column_name": "language",
+  "data_type": "character varying"
+}, {
+  "table_name": "api_usage_logs",
+  "column_name": "provider",
+  "data_type": "character varying"
+}, {
+  "table_name": "users",
+  "column_name": "name",
+  "data_type": "character varying"
+}, {
+  "table_name": "users",
+  "column_name": "email",
+  "data_type": "character varying"
+}, {
+  "table_name": "users",
+  "column_name": "password",
+  "data_type": "character varying"
+}, {
+  "table_name": "users",
+  "column_name": "role",
+  "data_type": "character varying"
+}, {
+  "table_name": "api_usage_logs",
+  "column_name": "model_name",
+  "data_type": "character varying"
+}, {
+  "table_name": "users",
+  "column_name": "verification_token",
+  "data_type": "character varying"
+}, {
+  "table_name": "users",
+  "column_name": "reset_token",
+  "data_type": "character varying"
+}, {
+  "table_name": "assessments",
+  "column_name": "instructions",
+  "data_type": "text"
+}, {
+  "table_name": "student_answers",
+  "column_name": "student_answer",
+  "data_type": "text"
+}, {
+  "table_name": "users",
+  "column_name": "provider",
+  "data_type": "character varying"
+}, {
+  "table_name": "users",
+  "column_name": "uid",
+  "data_type": "character varying"
+}, {
+  "table_name": "users",
+  "column_name": "preferred_language",
+  "data_type": "character varying"
+}, {
+  "table_name": "api_usage_logs",
+  "column_name": "operation_type",
+  "data_type": "character varying"
+}, {
+  "table_name": "courses",
+  "column_name": "title",
+  "data_type": "character varying"
+}, {
+  "table_name": "resources",
+  "column_name": "name",
+  "data_type": "character varying"
+}, {
+  "table_name": "resources",
+  "column_name": "file_path",
+  "data_type": "character varying"
+}, {
+  "table_name": "resources",
+  "column_name": "file_type",
+  "data_type": "character varying"
+}, {
+  "table_name": "courses",
+  "column_name": "description",
+  "data_type": "text"
+}, {
+  "table_name": "resources",
+  "column_name": "url",
+  "data_type": "character varying"
+}, {
+  "table_name": "ai_generation_audit_logs",
+  "column_name": "status",
+  "data_type": "character varying"
+}, {
+  "table_name": "ai_generation_audit_logs",
+  "column_name": "error_message",
+  "data_type": "text"
+}, {
+  "table_name": "student_answers",
+  "column_name": "ai_feedback",
+  "data_type": "text"
+}, {
+  "table_name": "questions",
+  "column_name": "question_text",
+  "data_type": "text"
+}, {
+  "table_name": "questions",
+  "column_name": "question_type",
+  "data_type": "character varying"
+}, {
+  "table_name": "ai_generation_audit_logs",
+  "column_name": "action",
+  "data_type": "character varying"
+}, {
+  "table_name": "questions",
+  "column_name": "correct_answer",
+  "data_type": "text"
+}, {
+  "table_name": "questions",
+  "column_name": "explanation",
+  "data_type": "text"
+}, {
+  "table_name": "ai_generation_audit_logs",
+  "column_name": "block_title",
+  "data_type": "character varying"
+}, {
+  "table_name": "questions",
+  "column_name": "difficulty_level",
+  "data_type": "character varying"
+}, {
+  "table_name": "questions",
+  "column_name": "tags",
+  "data_type": "ARRAY"
+}, {
+  "table_name": "generated_questions",
+  "column_name": "question_text",
+  "data_type": "text"
+}, {
+  "table_name": "generated_questions",
+  "column_name": "question_type",
+  "data_type": "character varying"
+}, {
+  "table_name": "assessments",
+  "column_name": "title",
+  "data_type": "character varying"
+}, {
+  "table_name": "generated_questions",
+  "column_name": "correct_answer",
+  "data_type": "text"
+}, {
+  "table_name": "question_blocks",
+  "column_name": "block_title",
+  "data_type": "character varying"
+}, {
+  "table_name": "question_blocks",
+  "column_name": "block_description",
+  "data_type": "text"
+}, {
+  "table_name": "generated_questions",
+  "column_name": "explanation",
+  "data_type": "text"
+}, {
+  "table_name": "generated_questions",
+  "column_name": "source_reference",
+  "data_type": "text"
+}, {
+  "table_name": "question_blocks",
+  "column_name": "difficulty_level",
+  "data_type": "character varying"
+}, {
+  "table_name": "question_blocks",
+  "column_name": "question_type",
+  "data_type": "character varying"
+}, {
+  "table_name": "question_blocks",
+  "column_name": "topics",
+  "data_type": "ARRAY"
+}, {
+  "table_name": "question_bank",
+  "column_name": "question_text",
+  "data_type": "text"
+}, {
+  "table_name": "question_bank",
+  "column_name": "question_type",
+  "data_type": "character varying"
+}, {
+  "table_name": "question_bank",
+  "column_name": "difficulty_level",
+  "data_type": "character varying"
+}, {
+  "table_name": "question_bank",
+  "column_name": "topics",
+  "data_type": "ARRAY"
+}, {
+  "table_name": "assessments",
+  "column_name": "description",
+  "data_type": "text"
+}, {
+  "table_name": "question_bank",
+  "column_name": "correct_answer",
+  "data_type": "text"
+}, {
+  "table_name": "assessment_enrollments",
+  "column_name": "status",
+  "data_type": "character varying"
+}, {
+  "table_name": "question_bank",
+  "column_name": "explanation",
+  "data_type": "text"
+}, {
+  "table_name": "ai_generation_audit_logs",
+  "column_name": "ai_response",
+  "data_type": "text"
+}, {
+  "table_name": "question_bank",
+  "column_name": "tags",
+  "data_type": "ARRAY"
+}, {
+  "table_name": "ai_configurations",
+  "column_name": "provider",
+  "data_type": "character varying"
+}]

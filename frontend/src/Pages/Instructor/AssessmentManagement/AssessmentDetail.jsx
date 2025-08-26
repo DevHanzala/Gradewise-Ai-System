@@ -7,6 +7,9 @@ import LoadingSpinner from "../../../components/ui/LoadingSpinner"
 import Modal from "../../../components/ui/Modal"
 import Navbar from "../../../components/Navbar"
 import Footer from "../../../components/Footer"
+import axios from "axios"
+
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api"
 
 function AssessmentDetail() {
   const { assessmentId } = useParams()
@@ -91,6 +94,32 @@ function AssessmentDetail() {
     }
   }
 
+  const handleTogglePublish = async () => {
+    try {
+      const token = localStorage.getItem("token")
+      const newPublishStatus = !currentAssessment.is_published
+      
+      const response = await axios.patch(
+        `${API_URL}/assessments/${assessmentId}/publish`,
+        { is_published: newPublishStatus },
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      
+      if (response.data.success) {
+        // Update local state
+        setCurrentAssessment(prev => ({
+          ...prev,
+          is_published: newPublishStatus
+        }))
+        
+        toast.success(`Assessment ${newPublishStatus ? 'published' : 'unpublished'} successfully!`)
+      }
+    } catch (error) {
+      console.error("Failed to toggle publish status:", error)
+      toast.error("Failed to update assessment publish status")
+    }
+  }
+
   const handleDeleteAssessment = async () => {
     try {
       await deleteAssessment(assessmentId)
@@ -127,7 +156,7 @@ function AssessmentDetail() {
             <div className="grid grid-cols-1 gap-2">
               {question.options.map((option, index) => (
                 <div
-                  key={index}
+                  key={`option-${question.id}-${index}`}
                   className={`p-2 rounded text-sm ${
                     option.startsWith(question.correct_answer) ? "bg-green-50 border border-green-200" : "bg-gray-50"
                   }`}
@@ -150,7 +179,7 @@ function AssessmentDetail() {
         {question.topics && question.topics.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {question.topics.map((topic, index) => (
-              <span key={index} className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded">
+              <span key={`topic-${question.id}-${index}`} className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded">
                 {topic}
               </span>
             ))}
@@ -362,7 +391,7 @@ function AssessmentDetail() {
                   ) : generatedQuestions && generatedQuestions.length > 0 ? (
                   <div className="space-y-4">
                       {generatedQuestions.map((block, index) => (
-                        <div key={index} className="border border-gray-200 rounded-lg p-4">
+                        <div key={`block-${block.block_title}-${index}`} className="border border-gray-200 rounded-lg p-4">
                           <div className="flex items-start justify-between mb-3">
                             <h3 className="font-semibold text-gray-900">{block.block_title}</h3>
                             <div className="flex space-x-2">
@@ -399,7 +428,7 @@ function AssessmentDetail() {
                               <div className="flex flex-wrap gap-1 mt-1">
                                 {block.topics.map((topic, topicIndex) => (
                                   <span
-                                    key={topicIndex}
+                                    key={`block-topic-${block.block_title}-${topicIndex}`}
                                     className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded"
                                   >
                                     {topic}
@@ -418,13 +447,7 @@ function AssessmentDetail() {
                       <p className="text-gray-600 mb-4">
                         This assessment doesn't have any question blocks configured yet.
                       </p>
-                              <button
-                        onClick={handleGenerateQuestions}
-                                disabled={isGenerating}
-                        className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50"
-                              >
-                        {isGenerating ? "Generating..." : "🤖 Generate Question Blocks"}
-                              </button>
+
                             </div>
                 )}
               </CardContent>
@@ -459,7 +482,7 @@ function AssessmentDetail() {
                             d="M13 10V3L4 14h7v7l9-11h-7z"
                           />
                         </svg>
-                        Generate Questions
+                        Generate Question Blocks
                       </>
                     )}
                   </button>
@@ -471,11 +494,45 @@ function AssessmentDetail() {
                     Add Students
                   </Link>
                   
+                  <Link
+                    to={`/instructor/assessments/${assessmentId}/ai-generation`}
+                    className="w-full px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 text-center block"
+                  >
+                    AI Generation
+                  </Link>
+                  
+                  <Link
+                    to={`/instructor/assessments/${assessmentId}/auto-grading`}
+                    className="w-full px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 text-center block"
+                  >
+                    Auto-grading
+                  </Link>
+                  
+
+                  
+                  <Link
+                    to={`/instructor/assessments/${assessmentId}/analytics`}
+                    className="w-full px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 text-center block"
+                  >
+                    Analytics
+                  </Link>
+                  
                 <button
                   onClick={() => navigate(`/instructor/assessments/${assessmentId}/edit`)}
                   className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                 >
                   Edit Assessment
+                </button>
+                
+                <button
+                  onClick={handleTogglePublish}
+                  className={`w-full px-4 py-2 ${
+                    currentAssessment?.is_published 
+                      ? 'bg-yellow-600 hover:bg-yellow-700' 
+                      : 'bg-green-600 hover:bg-green-700'
+                  } text-white rounded-md`}
+                >
+                  {currentAssessment?.is_published ? 'Unpublish' : 'Publish'}
                 </button>
                   
                 <button

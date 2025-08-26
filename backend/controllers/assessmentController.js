@@ -61,16 +61,32 @@ export const createNewAssessment = async (req, res) => {
       })
     }
 
+    // Calculate duration based on question blocks if provided
+    let calculatedDuration = duration || 60
+    if (question_blocks && Array.isArray(question_blocks) && question_blocks.length > 0) {
+      const totalQuestions = question_blocks.reduce((total, block) => total + (block.question_count || 1), 0)
+      const averageComplexity = question_blocks.reduce((total, block) => {
+        const complexity = block.difficulty_level === 'easy' ? 1 : block.difficulty_level === 'medium' ? 1.5 : 2
+        return total + complexity
+      }, 0) / question_blocks.length
+      
+      // Base time: 2 minutes per question + complexity factor
+      calculatedDuration = Math.ceil(totalQuestions * 2 * averageComplexity)
+    }
+
     // Create assessment data object (removed course_id concept)
+    // Auto-publish assessment if it has question blocks
+    const shouldAutoPublish = question_blocks && Array.isArray(question_blocks) && question_blocks.length > 0
+    
     const assessmentData = {
       title,
       description,
       instructor_id,
-      duration: duration || 60,
+      duration: calculatedDuration,
       total_marks: total_marks || 100,
       passing_marks: passing_marks || 50,
       instructions: instructions || null,
-      is_published: is_published || false,
+      is_published: shouldAutoPublish || is_published || false,
       start_date: start_date || null,
       end_date: end_date || null,
     }
@@ -137,6 +153,58 @@ export const getInstructorAssessments = async (req, res) => {
     res.status(500).json({ 
       success: false,
       message: "Failed to retrieve assessments", 
+      error: error.message 
+    })
+  }
+}
+
+/**
+ * Publish/Unpublish an assessment
+ * @route PATCH /api/assessments/:id/publish
+ */
+export const toggleAssessmentPublish = async (req, res) => {
+  try {
+    const assessment_id = parseInt(req.params.id)
+    const instructor_id = req.user.id
+    const { is_published } = req.body
+
+    console.log(`📢 Toggling assessment ${assessment_id} publish status to: ${is_published}`)
+
+    // Check if assessment exists and belongs to instructor
+    const assessment = await getAssessmentById(assessment_id, instructor_id, "instructor")
+
+    if (!assessment) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Assessment not found or you don't have permission to access it" 
+      })
+    }
+
+    // Update publish status
+    const result = await db.query(
+      "UPDATE assessments SET is_published = $1, updated_at = NOW() WHERE id = $2 RETURNING *",
+      [is_published, assessment_id]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(500).json({ 
+        success: false,
+        message: "Failed to update assessment publish status" 
+      })
+    }
+
+    console.log(`✅ Assessment ${assessment_id} publish status updated to: ${is_published}`)
+
+    res.status(200).json({
+      success: true,
+      message: `Assessment ${is_published ? 'published' : 'unpublished'} successfully`,
+      data: result.rows[0]
+    })
+  } catch (error) {
+    console.error("❌ Toggle assessment publish error:", error)
+    res.status(500).json({ 
+      success: false,
+      message: "Failed to toggle assessment publish status", 
       error: error.message 
     })
   }
@@ -431,12 +499,69 @@ export const getAssessmentStudents = async (req, res) => {
 
     console.log(`✅ Found ${students.length} enrolled students`)
     res.status(200).json({
-      message: "Students retrieved successfully",
-      students,
+      success: true,
+      data: students,
     })
   } catch (error) {
     console.error("❌ Get assessment students error:", error)
     res.status(500).json({ message: "Failed to retrieve enrolled students", error: error.message })
+  }
+}
+
+/**
+ * Get available students for enrollment (students not yet enrolled)
+ * @route GET /api/assessments/:id/available-students
+ */
+export const getAvailableStudents = async (req, res) => {
+  try {
+    const assessment_id = req.params.id
+    const instructor_id = req.user.id
+
+    console.log(`👥 Fetching available students for assessment ${assessment_id}`)
+
+    // Check if assessment exists and belongs to instructor
+    const assessment = await getAssessmentById(assessment_id, instructor_id, "instructor")
+
+    if (!assessment) {
+      return res.status(404).json({ message: "Assessment not found or you don't have permission to access it" })
+    }
+
+    // Get students who are not enrolled in this assessment
+    const availableStudentsQuery = `
+      SELECT 
+        u.id,
+        u.name,
+        u.email,
+        u.role,
+        u.created_at
+      FROM users u
+      WHERE u.role = 'student'
+      AND u.id NOT IN (
+        SELECT student_id 
+        FROM assessment_enrollments 
+        WHERE assessment_id = $1
+      )
+      ORDER BY u.name ASC
+    `
+
+    const availableStudentsResult = await db.query(availableStudentsQuery, [assessment_id])
+    const availableStudents = availableStudentsResult.rows
+
+    console.log(`✅ Found ${availableStudents.length} available students`)
+
+    res.status(200).json({
+      success: true,
+      message: "Available students retrieved successfully",
+      data: availableStudents
+    })
+
+  } catch (error) {
+    console.error("❌ Get available students error:", error)
+    res.status(500).json({
+      success: false,
+      message: "Failed to retrieve available students",
+      error: error.message
+    })
   }
 }
 

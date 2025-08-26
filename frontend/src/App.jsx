@@ -26,6 +26,11 @@ import AssessmentList from "./Pages/Instructor/AssessmentManagement/AssessmentLi
 import AssessmentDetail from "./Pages/Instructor/AssessmentManagement/AssessmentDetail"
 import EnrollStudents from "./Pages/Instructor/AssessmentManagement/EnrollStudents"
 import GenerateQuestions from "./Pages/Instructor/AssessmentManagement/GenerateQuestions"
+import AIGenerationInterface from "./Pages/Instructor/AssessmentManagement/AIGenerationInterface"
+import AutoGradingInterface from "./Pages/Instructor/AssessmentManagement/AutoGradingInterface"
+
+import AssessmentAnalytics from "./Pages/Instructor/AssessmentManagement/AssessmentAnalytics"
+import AddStudent from "./Pages/Instructor/AddStudent"
 
 // Course Management
 import CreateCourse from "./Pages/Instructor/CourseManagement/CreateCourse"
@@ -46,6 +51,7 @@ import StudentCourseDetail from "./Pages/Student/CourseManagement/StudentCourseD
 import SubmitAssignment from "./Pages/Student/AssignmentManagement/SubmitAssignment"
 import SubmissionDetail from "./Pages/Student/AssignmentManagement/SubmissionDetail"
 import TakeAssessment from "./Pages/Student/AssesmentManagement/TakeAssessment"
+import StudentAnalytics from "./Pages/Student/StudentAnalytics"
 
 // Components
 import ProtectedRoute from "./components/ProtectedRoutes"
@@ -144,6 +150,41 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/instructor/assessments/:assessmentId/ai-generation"
+            element={
+              <ProtectedRoute requiredRole="instructor">
+                <AIGenerationInterface />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instructor/assessments/:assessmentId/auto-grading"
+            element={
+              <ProtectedRoute requiredRole="instructor">
+                <AutoGradingInterface />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/instructor/assessments/:assessmentId/analytics"
+            element={
+              <ProtectedRoute requiredRole="instructor">
+                <AssessmentAnalytics />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Student Management Routes */}
+          <Route
+            path="/instructor/students"
+            element={
+              <ProtectedRoute requiredRole="instructor">
+                <AddStudent />
+              </ProtectedRoute>
+            }
+          />
 
           {/* Course Management Routes */}
           <Route
@@ -219,6 +260,14 @@ function App() {
             element={
               <ProtectedRoute requiredRole="student">
                 <StudentDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/student/analytics"
+            element={
+              <ProtectedRoute requiredRole="student">
+                <StudentAnalytics />
               </ProtectedRoute>
             }
           />

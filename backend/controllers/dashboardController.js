@@ -17,29 +17,29 @@ export const getAdminOverview = async (req, res) => {
     `
     const { rows: userStats } = await pool.query(usersQuery)
 
-    // Get total courses count
-    const coursesQuery = `SELECT COUNT(*) as count FROM courses`
-    const { rows: courseStats } = await pool.query(coursesQuery)
+    // Get total assessments count
+    const assessmentsQuery = `SELECT COUNT(*) as count FROM assessments`
+    const { rows: assessmentStats } = await pool.query(assessmentsQuery)
 
-    // Get total enrollments count
-    const enrollmentsQuery = `SELECT COUNT(*) as count FROM students_courses`
+    // Get total assessment enrollments count
+    const enrollmentsQuery = `SELECT COUNT(*) as count FROM assessment_enrollments`
     const { rows: enrollmentStats } = await pool.query(enrollmentsQuery)
 
-    // Get total assignments count
-    const assignmentsQuery = `SELECT COUNT(*) as count FROM assignments`
-    const { rows: assignmentStats } = await pool.query(assignmentsQuery)
+    // Get total question blocks count
+    const questionBlocksQuery = `SELECT COUNT(*) as count FROM question_blocks`
+    const { rows: questionBlockStats } = await pool.query(questionBlocksQuery)
 
-    // Get total submissions count
-    const submissionsQuery = `SELECT COUNT(*) as count FROM submissions`
-    const { rows: submissionStats } = await pool.query(submissionsQuery)
+    // Get total assessment attempts count
+    const attemptsQuery = `SELECT COUNT(*) as count FROM assessment_attempts`
+    const { rows: attemptStats } = await pool.query(attemptsQuery)
 
-    // Get recent activity (last 10 enrollments)
+    // Get recent activity (last 10 assessment enrollments)
     const recentActivityQuery = `
-      SELECT sc.enrolled_at, u.name as student_name, c.title as course_title
-      FROM students_courses sc
-      JOIN users u ON sc.student_id = u.id
-      JOIN courses c ON sc.course_id = c.id
-      ORDER BY sc.enrolled_at DESC
+      SELECT ae.enrolled_at, u.name as student_name, a.title as assessment_title
+      FROM assessment_enrollments ae
+      JOIN users u ON ae.student_id = u.id
+      JOIN assessments a ON ae.assessment_id = a.id
+      ORDER BY ae.enrolled_at DESC
       LIMIT 10
     `
     const { rows: recentActivity } = await pool.query(recentActivityQuery)
@@ -60,10 +60,10 @@ export const getAdminOverview = async (req, res) => {
         instructor: usersByRole.instructor,
         student: usersByRole.student,
       },
-      courses: Number.parseInt(courseStats[0].count),
+      assessments: Number.parseInt(assessmentStats[0].count),
       enrollments: Number.parseInt(enrollmentStats[0].count),
-      assignments: Number.parseInt(assignmentStats[0].count),
-      submissions: Number.parseInt(submissionStats[0].count),
+      questionBlocks: Number.parseInt(questionBlockStats[0].count),
+      attempts: Number.parseInt(attemptStats[0].count),
       recentActivity,
     }
 
@@ -89,66 +89,67 @@ export const getInstructorOverview = async (req, res) => {
   try {
     console.log(`🔄 Fetching instructor overview for ${instructorId}`)
 
-    // Get instructor's courses count
-    const coursesQuery = `
-      SELECT COUNT(*) as count FROM courses WHERE instructor_id = $1
+    // Get instructor's assessments count
+    const assessmentsQuery = `
+      SELECT COUNT(*) as count FROM assessments WHERE instructor_id = $1
     `
-    const { rows: courseStats } = await pool.query(coursesQuery, [instructorId])
+    const { rows: assessmentStats } = await pool.query(assessmentsQuery, [instructorId])
 
-    // Get total students enrolled in instructor's courses
+    // Get total students enrolled in instructor's assessments
     const studentsQuery = `
-      SELECT COUNT(DISTINCT sc.student_id) as count
-      FROM students_courses sc
-      JOIN courses c ON sc.course_id = c.id
-      WHERE c.instructor_id = $1
+      SELECT COUNT(DISTINCT ae.student_id) as count
+      FROM assessment_enrollments ae
+      JOIN assessments a ON ae.assessment_id = a.id
+      WHERE a.instructor_id = $1
     `
     const { rows: studentStats } = await pool.query(studentsQuery, [instructorId])
 
-    // Get instructor's assignments count
-    const assignmentsQuery = `
-      SELECT COUNT(*) as count FROM assignments WHERE created_by = $1
+    // Get instructor's question blocks count
+    const questionBlocksQuery = `
+      SELECT COUNT(*) as count 
+      FROM question_blocks qb
+      JOIN assessments a ON qb.assessment_id = a.id
+      WHERE a.instructor_id = $1
     `
-    const { rows: assignmentStats } = await pool.query(assignmentsQuery, [instructorId])
+    const { rows: questionBlockStats } = await pool.query(questionBlocksQuery, [instructorId])
 
-    // Get submissions for instructor's assignments
-    const submissionsQuery = `
+    // Get total attempts for instructor's assessments
+    const attemptsQuery = `
       SELECT COUNT(*) as count
-      FROM submissions s
-      JOIN assignments a ON s.assignment_id = a.id
-      WHERE a.created_by = $1
+      FROM assessment_attempts aa
+      JOIN assessments a ON aa.assessment_id = a.id
+      WHERE a.instructor_id = $1
     `
-    const { rows: submissionStats } = await pool.query(submissionsQuery, [instructorId])
+    const { rows: attemptStats } = await pool.query(attemptsQuery, [instructorId])
 
-    // Get pending submissions (ungraded)
-    const pendingSubmissionsQuery = `
+    // Get pending attempts (not graded yet)
+    const pendingAttemptsQuery = `
       SELECT COUNT(*) as count
-      FROM submissions s
-      JOIN assignments a ON s.assignment_id = a.id
-      WHERE a.created_by = $1 AND s.grade IS NULL
+      FROM assessment_attempts aa
+      JOIN assessments a ON aa.assessment_id = a.id
+      WHERE a.instructor_id = $1 AND aa.grade IS NULL
     `
-    const { rows: pendingStats } = await pool.query(pendingSubmissionsQuery, [instructorId])
+    const { rows: pendingStats } = await pool.query(pendingAttemptsQuery, [instructorId])
 
-    // Get recent submissions for instructor's assignments
-    const recentSubmissionsQuery = `
-      SELECT s.submitted_at, u.name as student_name, a.title as assignment_title,
-             c.title as course_title
-      FROM submissions s
-      JOIN users u ON s.student_id = u.id
-      JOIN assignments a ON s.assignment_id = a.id
-      JOIN courses c ON a.course_id = c.id
-      WHERE a.created_by = $1
-      ORDER BY s.submitted_at DESC
+    // Get recent enrollments for instructor's assessments
+    const recentEnrollmentsQuery = `
+      SELECT ae.enrolled_at, u.name as student_name, a.title as assessment_title
+      FROM assessment_enrollments ae
+      JOIN users u ON ae.student_id = u.id
+      JOIN assessments a ON ae.assessment_id = a.id
+      WHERE a.instructor_id = $1
+      ORDER BY ae.enrolled_at DESC
       LIMIT 10
     `
-    const { rows: recentSubmissions } = await pool.query(recentSubmissionsQuery, [instructorId])
+    const { rows: recentEnrollments } = await pool.query(recentEnrollmentsQuery, [instructorId])
 
     const overview = {
-      courses: Number.parseInt(courseStats[0].count),
+      assessments: Number.parseInt(assessmentStats[0].count),
       students: Number.parseInt(studentStats[0].count),
-      assignments: Number.parseInt(assignmentStats[0].count),
-      submissions: Number.parseInt(submissionStats[0].count),
+      questionBlocks: Number.parseInt(questionBlockStats[0].count),
+      totalAttempts: Number.parseInt(attemptStats[0].count),
       pendingGrades: Number.parseInt(pendingStats[0].count),
-      recentSubmissions,
+      recentEnrollments,
     }
 
     console.log(`✅ Instructor overview statistics fetched successfully`)
@@ -173,66 +174,61 @@ export const getStudentOverview = async (req, res) => {
   try {
     console.log(`🔄 Fetching student overview for ${studentId}`)
 
-    // Get student's enrolled courses count
-    const coursesQuery = `
-      SELECT COUNT(*) as count FROM students_courses WHERE student_id = $1
+    // Get student's enrolled assessments count
+    const assessmentsQuery = `
+      SELECT COUNT(*) as count FROM assessment_enrollments WHERE student_id = $1
     `
-    const { rows: courseStats } = await pool.query(coursesQuery, [studentId])
+    const { rows: assessmentStats } = await pool.query(assessmentsQuery, [studentId])
 
-    // Get total assignments for student's enrolled courses
-    const assignmentsQuery = `
+    // Get total question blocks for student's enrolled assessments
+    const questionBlocksQuery = `
       SELECT COUNT(*) as count
-      FROM assignments a
-      JOIN courses c ON a.course_id = c.id
-      JOIN students_courses sc ON c.id = sc.course_id
-      WHERE sc.student_id = $1
+      FROM question_blocks qb
+      JOIN assessment_enrollments ae ON qb.assessment_id = ae.assessment_id
+      WHERE ae.student_id = $1
     `
-    const { rows: assignmentStats } = await pool.query(assignmentsQuery, [studentId])
+    const { rows: questionBlockStats } = await pool.query(questionBlocksQuery, [studentId])
 
-    // Get student's submissions count
-    const submissionsQuery = `
-      SELECT COUNT(*) as count FROM submissions WHERE student_id = $1
+    // Get student's assessment attempts count
+    const attemptsQuery = `
+      SELECT COUNT(*) as count FROM assessment_attempts WHERE student_id = $1
     `
-    const { rows: submissionStats } = await pool.query(submissionsQuery, [studentId])
+    const { rows: attemptStats } = await pool.query(attemptsQuery, [studentId])
 
-    // Get graded submissions count
-    const gradedQuery = `
-      SELECT COUNT(*) as count FROM submissions 
-      WHERE student_id = $1 AND grade IS NOT NULL
+    // Get completed attempts count
+    const completedQuery = `
+      SELECT COUNT(*) as count FROM assessment_attempts 
+      WHERE student_id = $1 AND submitted_at IS NOT NULL
     `
-    const { rows: gradedStats } = await pool.query(gradedQuery, [studentId])
+    const { rows: completedStats } = await pool.query(completedQuery, [studentId])
 
-    // Get pending assignments (not submitted yet)
-    const pendingAssignmentsQuery = `
+    // Get pending assessments (enrolled but not attempted yet)
+    const pendingAssessmentsQuery = `
       SELECT COUNT(*) as count
-      FROM assignments a
-      JOIN courses c ON a.course_id = c.id
-      JOIN students_courses sc ON c.id = sc.course_id
-      LEFT JOIN submissions s ON a.id = s.assignment_id AND s.student_id = $1
-      WHERE sc.student_id = $1 AND s.id IS NULL
+      FROM assessment_enrollments ae
+      LEFT JOIN assessment_attempts aa ON ae.assessment_id = aa.assessment_id AND ae.student_id = aa.student_id
+      WHERE ae.student_id = $1 AND aa.id IS NULL
     `
-    const { rows: pendingStats } = await pool.query(pendingAssignmentsQuery, [studentId])
+    const { rows: pendingStats } = await pool.query(pendingAssessmentsQuery, [studentId])
 
-    // Get recent grades
-    const recentGradesQuery = `
-      SELECT s.grade, s.feedback, s.submitted_at, a.title as assignment_title,
-             c.title as course_title
-      FROM submissions s
-      JOIN assignments a ON s.assignment_id = a.id
-      JOIN courses c ON a.course_id = c.id
-      WHERE s.student_id = $1 AND s.grade IS NOT NULL
-      ORDER BY s.submitted_at DESC
+    // Get recent attempts
+    const recentAttemptsQuery = `
+      SELECT aa.submitted_at, aa.grade, aa.percentage, a.title as assessment_title
+      FROM assessment_attempts aa
+      JOIN assessments a ON aa.assessment_id = a.id
+      WHERE aa.student_id = $1 AND aa.submitted_at IS NOT NULL
+      ORDER BY aa.submitted_at DESC
       LIMIT 10
     `
-    const { rows: recentGrades } = await pool.query(recentGradesQuery, [studentId])
+    const { rows: recentAttempts } = await pool.query(recentAttemptsQuery, [studentId])
 
     const overview = {
-      enrolledCourses: Number.parseInt(courseStats[0].count),
-      totalAssignments: Number.parseInt(assignmentStats[0].count),
-      submissions: Number.parseInt(submissionStats[0].count),
-      gradedSubmissions: Number.parseInt(gradedStats[0].count),
-      pendingAssignments: Number.parseInt(pendingStats[0].count),
-      recentGrades,
+      enrolledAssessments: Number.parseInt(assessmentStats[0].count),
+      totalQuestionBlocks: Number.parseInt(questionBlockStats[0].count),
+      attempts: Number.parseInt(attemptStats[0].count),
+      completedAttempts: Number.parseInt(completedStats[0].count),
+      pendingAssessments: Number.parseInt(pendingStats[0].count),
+      recentAttempts,
     }
 
     console.log(`✅ Student overview statistics fetched successfully`)

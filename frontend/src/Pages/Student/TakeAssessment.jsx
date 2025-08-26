@@ -1,204 +1,219 @@
 import { useState, useEffect, useCallback } from "react"
 import { useParams, useNavigate } from "react-router-dom"
-import { toast } from "react-hot-toast"
-import { Clock, ChevronLeft, ChevronRight, Flag, Send, AlertTriangle } from "lucide-react"
-import Navbar from "../../components/Navbar"
+import { Card, CardHeader, CardContent } from "../../components/ui/Card"
 import LoadingSpinner from "../../components/ui/LoadingSpinner"
 import Modal from "../../components/ui/Modal"
+import Navbar from "../../components/Navbar"
+import Footer from "../../components/Footer"
+import useAssessmentTakingStore from "../../store/assessmentTakingStore"
+import useAssessmentStore from "../../store/assessmentStore"
+import useQuestionStore from "../../store/questionStore"
+import toast from "react-hot-toast"
+import axios from "axios"
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api"
 
-const TakeAssessment = () => {
+/**
+ * Take Assessment Component
+ * Handles the complete assessment taking experience using REAL data:
+ * - Fetches questions from database
+ * - Integrates with assessment taking backend
+ * - Real-time progress tracking and autosave
+ */
+function TakeAssessment() {
   const { assessmentId } = useParams()
   const navigate = useNavigate()
 
-  // State management
-  const [loading, setLoading] = useState(true)
-  const [session, setSession] = useState(null)
+  // Store hooks
+  const { 
+    currentAttempt, 
+    startAttempt, 
+    saveProgress, 
+    submitAttempt, 
+    loading, 
+    error 
+  } = useAssessmentTakingStore()
+  
+  const { getAssessmentById, currentAssessment } = useAssessmentStore()
+  const { getQuestionsByAssessment, generatedQuestions, loading: questionsLoading } = useQuestionStore()
+  
+  // Local state
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [answers, setAnswers] = useState({})
   const [timeRemaining, setTimeRemaining] = useState(0)
-  const [showSubmitModal, setShowSubmitModal] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [autoSubmitWarning, setAutoSubmitWarning] = useState(false)
+  const [showConfirmSubmit, setShowConfirmSubmit] = useState(false)
+  const [showExitConfirm, setShowExitConfirm] = useState(false)
+  const [lastSaved, setLastSaved] = useState(null)
+  const [questions, setQuestions] = useState([])
+  const [loadingQuestions, setLoadingQuestions] = useState(true)
 
   // Timer effect
   useEffect(() => {
-    if (timeRemaining > 0 && session?.status === "active") {
+    if (timeRemaining > 0) {
       const timer = setInterval(() => {
-        setTimeRemaining((prev) => {
-          const newTime = prev - 1
-
-          // Show warning when 5 minutes remaining
-          if (newTime === 300 && !autoSubmitWarning) {
-            setAutoSubmitWarning(true)
-            toast.error("⚠️ Only 5 minutes remaining! Assessment will auto-submit when time expires.")
-          }
-
-          // Auto-submit when time expires
-          if (newTime <= 0) {
+        setTimeRemaining(prev => {
+          if (prev <= 1) {
+            // Auto-submit when time runs out
             handleAutoSubmit()
             return 0
           }
-
-          return newTime
+          return prev - 1
         })
       }, 1000)
 
       return () => clearInterval(timer)
     }
-  }, [timeRemaining, session?.status, autoSubmitWarning])
+  }, [timeRemaining])
 
-  // Load or start assessment
+  // Autosave effect
   useEffect(() => {
-    startOrResumeAssessment()
+    if (currentAttempt && Object.keys(answers).length > 0) {
+      const autosaveTimer = setTimeout(() => {
+        handleAutosave()
+      }, 30000) // Autosave every 30 seconds
+      
+      return () => clearTimeout(autosaveTimer)
+    }
+  }, [answers, currentAttempt])
+
+  // Start assessment when component mounts
+  useEffect(() => {
+    if (assessmentId && !currentAttempt) {
+      startAssessment()
+    }
   }, [assessmentId])
 
-  const startOrResumeAssessment = async () => {
+  // Load assessment details and questions
+  useEffect(() => {
+    if (assessmentId) {
+      loadAssessmentData()
+    }
+  }, [assessmentId])
+
+  const loadAssessmentData = async () => {
     try {
-      setLoading(true)
-      const token = localStorage.getItem("token")
-
-      const response = await fetch(`${API_URL}/taking/${assessmentId}/start`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      })
-
-      const data = await response.json()
-
-      if (data.success) {
-        // Load session details
-        await loadSessionDetails(data.data.session_id)
-        toast.success(data.message)
-      } else {
-        toast.error(data.message)
-        navigate("/student/dashboard")
-      }
+      setLoadingQuestions(true)
+      
+      // Load assessment details
+      await getAssessmentById(assessmentId)
+      
+      // Load questions from database
+      await loadQuestionsFromDatabase()
+      
     } catch (error) {
-      console.error("Error starting assessment:", error)
-      toast.error("Failed to start assessment")
-      navigate("/student/dashboard")
+      console.error("Failed to load assessment data:", error)
+      toast.error("Failed to load assessment data")
     } finally {
-      setLoading(false)
+      setLoadingQuestions(false)
     }
   }
 
-  const loadSessionDetails = async (sessionId) => {
+  const loadQuestionsFromDatabase = async () => {
     try {
       const token = localStorage.getItem("token")
 
-      const response = await fetch(`${API_URL}/taking/sessions/${sessionId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+      // First try to get questions from question blocks
+      const response = await axios.get(`${API_URL}/questions/assessment/${assessmentId}`, {
+        headers: { Authorization: `Bearer ${token}` }
       })
-
-      const data = await response.json()
-
-      if (data.success) {
-        setSession(data.data)
-        setTimeRemaining(data.data.time_remaining)
-        setCurrentQuestionIndex(data.data.current_question || 0)
-
-        // Load existing answers
-        const existingAnswers = {}
-        data.data.questions.forEach((q) => {
-          if (q.is_answered) {
-            existingAnswers[q.question_number] = q.student_answer
+      
+      if (response.data.success && response.data.data.length > 0) {
+        // Convert question blocks to flat question array
+        const flatQuestions = response.data.data.flatMap(block => {
+          if (block.questions && Array.isArray(block.questions)) {
+            return block.questions.map((q, index) => ({
+              ...q,
+              block_title: block.block_title,
+              question_number: index + 1
+            }))
           }
+          return []
         })
-        setAnswers(existingAnswers)
-      } else {
-        toast.error(data.message)
+        
+        if (flatQuestions.length > 0) {
+          setQuestions(flatQuestions)
+          return
+        }
+      }
+      
+      // Fallback: try to get questions from question store
+      await getQuestionsByAssessment(assessmentId)
+      if (generatedQuestions && generatedQuestions.length > 0) {
+        setQuestions(generatedQuestions)
+        return
+      }
+      
+      // If no questions found, show error
+      toast.error("No questions found for this assessment. Please contact your instructor.")
+      navigate("/student/dashboard")
+      
+    } catch (error) {
+      console.error("Failed to load questions:", error)
+      toast.error("Failed to load assessment questions")
         navigate("/student/dashboard")
       }
+  }
+
+  const startAssessment = async () => {
+    try {
+      const attemptData = await startAttempt(parseInt(assessmentId))
+      setTimeRemaining(attemptData.time_remaining || 3600) // Default 1 hour
+      toast.success(attemptData.resumed ? "Resuming previous attempt" : "Assessment started!")
     } catch (error) {
-      console.error("Error loading session:", error)
-      toast.error("Failed to load assessment session")
+      toast.error(error.message || "Failed to start assessment")
       navigate("/student/dashboard")
     }
   }
 
-  const saveAnswer = async (questionNumber, answer) => {
+  const handleAutosave = async () => {
     try {
-      const token = localStorage.getItem("token")
+      const answersArray = Object.entries(answers).map(([questionId, answer]) => ({
+        question_id: parseInt(questionId),
+        answer_text: answer.answer_text || "",
+        selected_options: answer.selected_options || []
+      }))
 
-      const response = await fetch(`${API_URL}/taking/sessions/${session.session_id}/answer`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          questionNumber,
-          answer,
-          timeSpent: 30, // You can track actual time spent
-        }),
-      })
+      await saveProgress(currentAttempt.attempt_id, answersArray, currentQuestionIndex + 1)
+      setLastSaved(new Date())
+      console.log("💾 Progress autosaved")
+    } catch (error) {
+      console.error("Autosave failed:", error)
+    }
+  }
 
-      const data = await response.json()
-
-      if (data.success) {
-        setAnswers((prev) => ({
+  const handleAnswerChange = (questionId, answerData) => {
+    setAnswers(prev => ({
           ...prev,
-          [questionNumber]: answer,
-        }))
-        setTimeRemaining(data.data.time_remaining)
-      } else {
-        toast.error("Failed to save answer")
-      }
-    } catch (error) {
-      console.error("Error saving answer:", error)
-      toast.error("Failed to save answer")
+      [questionId]: answerData
+    }))
+  }
+
+  const handleQuestionNavigation = (direction) => {
+    if (direction === 'next' && currentQuestionIndex < questions.length - 1) {
+      setCurrentQuestionIndex(prev => prev + 1)
+    } else if (direction === 'prev' && currentQuestionIndex > 0) {
+      setCurrentQuestionIndex(prev => prev - 1)
     }
   }
 
-  const handleAnswerChange = (answer) => {
-    const currentQuestion = session.questions[currentQuestionIndex]
-    saveAnswer(currentQuestion.question_number, answer)
+  const handleAutoSubmit = async () => {
+    toast.error("Time's up! Submitting assessment automatically.")
+    await handleSubmit()
   }
 
-  const handleAutoSubmit = useCallback(async () => {
-    if (submitting) return
-
+  const handleSubmit = async () => {
     try {
-      setSubmitting(true)
-      toast.error("⏰ Time expired! Auto-submitting assessment...")
-      await submitAssessment()
-    } catch (error) {
-      console.error("Auto-submit error:", error)
-    }
-  }, [submitting])
+      const answersArray = Object.entries(answers).map(([questionId, answer]) => ({
+        question_id: parseInt(questionId),
+        answer_text: answer.answer_text || "",
+        selected_options: answer.selected_options || []
+      }))
 
-  const submitAssessment = async () => {
-    try {
-      setSubmitting(true)
-      const token = localStorage.getItem("token")
-
-      const response = await fetch(`${API_URL}/taking/sessions/${session.session_id}/submit`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      })
-
-      const data = await response.json()
-
-      if (data.success) {
+      await submitAttempt(currentAttempt.attempt_id, answersArray)
         toast.success("Assessment submitted successfully!")
-        navigate(`/student/submissions/${data.data.submission_id}`)
-      } else {
-        toast.error(data.message)
-        setSubmitting(false)
-      }
+      navigate("/student/dashboard")
     } catch (error) {
-      console.error("Error submitting assessment:", error)
-      toast.error("Failed to submit assessment")
-      setSubmitting(false)
+      toast.error(error.message || "Failed to submit assessment")
     }
   }
 
@@ -208,305 +223,332 @@ const TakeAssessment = () => {
     const secs = seconds % 60
 
     if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
     }
-    return `${minutes}:${secs.toString().padStart(2, "0")}`
+    return `${minutes}:${secs.toString().padStart(2, '0')}`
   }
 
-  const getAnsweredCount = () => {
-    return Object.keys(answers).length
-  }
+  const getQuestionComponent = (question) => {
+    switch (question.question_type) {
+      case 'multiple_choice':
+        return (
+          <div className="space-y-3">
+            {question.options && question.options.map((option, index) => (
+              <label key={index} className="flex items-center space-x-3 cursor-pointer">
+                <input
+                  type="radio"
+                  name={`question_${question.id}`}
+                  value={option}
+                  checked={answers[question.id]?.selected_options?.includes(option) || false}
+                  onChange={(e) => handleAnswerChange(question.id, {
+                    answer_text: "",
+                    selected_options: [e.target.value]
+                  })}
+                  className="text-blue-600"
+                />
+                <span className="text-gray-700">{option}</span>
+              </label>
+            ))}
+          </div>
+        )
 
-  const navigateToQuestion = (index) => {
-    setCurrentQuestionIndex(index)
-  }
+      case 'true_false':
+        return (
+          <div className="space-y-3">
+            {['True', 'False'].map((option) => (
+              <label key={option} className="flex items-center space-x-3 cursor-pointer">
+                <input
+                  type="radio"
+                  name={`question_${question.id}`}
+                  value={option}
+                  checked={answers[question.id]?.answer_text === option}
+                  onChange={(e) => handleAnswerChange(question.id, {
+                    answer_text: e.target.value,
+                    selected_options: []
+                  })}
+                  className="text-blue-600"
+                />
+                <span className="text-gray-700">{option}</span>
+              </label>
+            ))}
+          </div>
+        )
 
-  const nextQuestion = () => {
-    if (currentQuestionIndex < session.questions.length - 1) {
-      setCurrentQuestionIndex(currentQuestionIndex + 1)
+      case 'short_answer':
+        return (
+          <textarea
+            value={answers[question.id]?.answer_text || ""}
+            onChange={(e) => handleAnswerChange(question.id, {
+              answer_text: e.target.value,
+              selected_options: []
+            })}
+            placeholder="Type your answer here..."
+            className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            rows={4}
+          />
+        )
+
+      case 'essay':
+        return (
+          <textarea
+            value={answers[question.id]?.answer_text || ""}
+            onChange={(e) => handleAnswerChange(question.id, {
+              answer_text: e.target.value,
+              selected_options: []
+            })}
+            placeholder="Write your detailed response here..."
+            className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            rows={8}
+          />
+        )
+
+      default:
+        return <p className="text-gray-500">Question type not supported</p>
     }
   }
 
-  const previousQuestion = () => {
-    if (currentQuestionIndex > 0) {
-      setCurrentQuestionIndex(currentQuestionIndex - 1)
-    }
-  }
-
-  if (loading) {
+  if (loading || !currentAttempt || loadingQuestions) {
     return (
       <div className="min-h-screen bg-gray-50">
         <Navbar />
-        <div className="flex items-center justify-center h-96">
-          <LoadingSpinner />
+        <div className="flex justify-center items-center h-64">
+          <LoadingSpinner size="lg" />
+          <span className="ml-3 text-gray-600">
+            {loadingQuestions ? "Loading assessment questions..." : "Starting assessment..."}
+          </span>
         </div>
+        <Footer />
       </div>
     )
   }
 
-  if (!session) {
+  if (!currentAssessment) {
     return (
       <div className="min-h-screen bg-gray-50">
         <Navbar />
-        <div className="container mx-auto px-4 py-8">
+        <div className="flex justify-center items-center h-64">
+          <LoadingSpinner size="lg" />
+          <span className="ml-3 text-gray-600">Loading assessment details...</span>
+        </div>
+        <Footer />
+      </div>
+    )
+  }
+
+  if (questions.length === 0) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navbar />
+        <div className="flex justify-center items-center h-64">
           <div className="text-center">
-            <h1 className="text-2xl font-bold text-gray-900 mb-4">Assessment Not Found</h1>
+            <div className="text-4xl mb-4">❌</div>
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">No Questions Available</h2>
+            <p className="text-gray-600 mb-4">This assessment doesn't have any questions yet.</p>
             <button
               onClick={() => navigate("/student/dashboard")}
-              className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
             >
               Back to Dashboard
             </button>
           </div>
         </div>
+        <Footer />
       </div>
     )
   }
 
-  const currentQuestion = session.questions[currentQuestionIndex]
-  const isLastQuestion = currentQuestionIndex === session.questions.length - 1
+  const currentQuestion = questions[currentQuestionIndex]
+  const progressPercentage = Math.round(((currentQuestionIndex + 1) / questions.length) * 100)
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
 
-      {/* Assessment Header */}
+      {/* Header with Timer and Progress */}
       <div className="bg-white shadow-sm border-b">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-xl font-bold text-gray-900">Assessment in Progress</h1>
-              <p className="text-gray-600">
-                Question {currentQuestionIndex + 1} of {session.questions.length}
-              </p>
+              <h1 className="text-2xl font-bold text-gray-900">
+                {currentAssessment.title}
+              </h1>
+              <p className="text-gray-600">Question {currentQuestionIndex + 1} of {questions.length}</p>
             </div>
-            <div className="flex items-center space-x-6">
-              <div className="flex items-center space-x-2">
-                <Clock className="h-5 w-5 text-red-500" />
-                <span
-                  className={`font-mono text-lg ${timeRemaining < 300 ? "text-red-600 font-bold" : "text-gray-900"}`}
-                >
+            
+            <div className="text-right">
+              <div className="text-2xl font-bold text-red-600">
                   {formatTime(timeRemaining)}
-                </span>
               </div>
-              <div className="text-sm text-gray-600">
-                Answered: {getAnsweredCount()}/{session.questions.length}
+              <div className="text-sm text-gray-500">Time Remaining</div>
               </div>
             </div>
+          
+          {/* Progress Bar */}
+          <div className="mt-4">
+            <div className="flex justify-between text-sm text-gray-600 mb-2">
+              <span>Progress</span>
+              <span>{progressPercentage}%</span>
           </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div 
+                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${progressPercentage}%` }}
+              ></div>
         </div>
       </div>
 
-      <div className="container mx-auto px-4 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Question Navigation Sidebar */}
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-lg shadow-sm p-4">
-              <h3 className="font-semibold text-gray-900 mb-4">Questions</h3>
-              <div className="grid grid-cols-5 lg:grid-cols-4 gap-2">
-                {session.questions.map((q, index) => (
-                  <button
-                    key={q.question_number}
-                    onClick={() => navigateToQuestion(index)}
-                    className={`
-                      w-10 h-10 rounded-lg text-sm font-medium transition-colors
-                      ${
-                        index === currentQuestionIndex
-                          ? "bg-blue-600 text-white"
-                          : answers[q.question_number]
-                            ? "bg-green-100 text-green-800 border border-green-300"
-                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                      }
-                    `}
-                  >
-                    {q.question_number}
-                  </button>
-                ))}
+          {/* Last Saved Indicator */}
+          {lastSaved && (
+            <div className="mt-2 text-sm text-green-600">
+              💾 Last saved: {lastSaved.toLocaleTimeString()}
               </div>
-              <div className="mt-4 space-y-2 text-sm">
-                <div className="flex items-center space-x-2">
-                  <div className="w-4 h-4 bg-green-100 border border-green-300 rounded"></div>
-                  <span className="text-gray-600">Answered</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <div className="w-4 h-4 bg-gray-100 rounded"></div>
-                  <span className="text-gray-600">Not Answered</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <div className="w-4 h-4 bg-blue-600 rounded"></div>
-                  <span className="text-gray-600">Current</span>
-                </div>
-              </div>
+          )}
             </div>
           </div>
 
-          {/* Main Question Area */}
-          <div className="lg:col-span-3">
-            <div className="bg-white rounded-lg shadow-sm p-6">
-              {/* Question Header */}
-              <div className="flex items-center justify-between mb-6">
+      {/* Main Content */}
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <Card>
+          <CardHeader>
+            <div className="flex justify-between items-start">
                 <div>
-                  <span className="text-sm text-gray-500">Question {currentQuestion.question_number}</span>
-                  <div className="flex items-center space-x-2 mt-1">
-                    <span className="text-sm bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                      {currentQuestion.marks} {currentQuestion.marks === 1 ? "mark" : "marks"}
-                    </span>
-                    <span className="text-sm bg-gray-100 text-gray-800 px-2 py-1 rounded capitalize">
-                      {currentQuestion.difficulty}
+                <h2 className="text-xl font-semibold text-gray-900">
+                  Question {currentQuestion.question_number}
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  {currentQuestion.question_type.replace('_', ' ').toUpperCase()} • {currentQuestion.marks || 10} marks
+                </p>
+                {currentQuestion.block_title && (
+                  <p className="text-xs text-blue-600 mt-1">
+                    Topic: {currentQuestion.block_title}
+                  </p>
+                )}
+              </div>
+              <div className="text-right">
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                  {currentQuestionIndex + 1} / {questions.length}
                     </span>
                   </div>
                 </div>
-                {answers[currentQuestion.question_number] && (
-                  <div className="flex items-center space-x-1 text-green-600">
-                    <Flag className="h-4 w-4" />
-                    <span className="text-sm">Answered</span>
-                  </div>
-                )}
+          </CardHeader>
+          
+          <CardContent>
+            <div className="mb-6">
+              <p className="text-lg text-gray-700 mb-4">{currentQuestion.question_text}</p>
+              {getQuestionComponent(currentQuestion)}
               </div>
 
-              {/* Question Content */}
-              <div className="mb-8">
-                <h2 className="text-lg font-medium text-gray-900 mb-4 leading-relaxed">{currentQuestion.question}</h2>
+            {/* Navigation Buttons */}
+            <div className="flex justify-between items-center pt-6 border-t">
+              <button
+                onClick={() => setShowExitConfirm(true)}
+                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 transition duration-200"
+              >
+                Exit Assessment
+              </button>
 
-                {/* Answer Options */}
-                {currentQuestion.type === "multiple_choice" && currentQuestion.options && (
-                  <div className="space-y-3">
-                    {currentQuestion.options.map((option, index) => {
-                      const optionValue = option.charAt(0) // A, B, C, D
-                      return (
-                        <label
-                          key={index}
-                          className={`
-                            flex items-start space-x-3 p-4 rounded-lg border cursor-pointer transition-colors
-                            ${
-                              answers[currentQuestion.question_number] === optionValue
-                                ? "border-blue-500 bg-blue-50"
-                                : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-                            }
-                          `}
-                        >
-                          <input
-                            type="radio"
-                            name={`question_${currentQuestion.question_number}`}
-                            value={optionValue}
-                            checked={answers[currentQuestion.question_number] === optionValue}
-                            onChange={(e) => handleAnswerChange(e.target.value)}
-                            className="mt-1 text-blue-600"
-                          />
-                          <span className="text-gray-900">{option}</span>
-                        </label>
-                      )
-                    })}
-                  </div>
-                )}
-
-                {/* Text Answer for other question types */}
-                {currentQuestion.type !== "multiple_choice" && (
-                  <div>
-                    <textarea
-                      value={answers[currentQuestion.question_number] || ""}
-                      onChange={(e) => handleAnswerChange(e.target.value)}
-                      placeholder="Type your answer here..."
-                      className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      rows={currentQuestion.type === "essay" ? 8 : 4}
-                    />
-                    <p className="text-sm text-gray-500 mt-2">
-                      {currentQuestion.type === "short_answer" && "Provide a brief answer"}
-                      {currentQuestion.type === "essay" && "Provide a detailed response"}
-                      {currentQuestion.type === "coding" && "Write your code solution"}
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Navigation Buttons */}
-              <div className="flex items-center justify-between pt-6 border-t">
+              <div className="flex space-x-3">
                 <button
-                  onClick={previousQuestion}
+                  onClick={() => handleQuestionNavigation('prev')}
                   disabled={currentQuestionIndex === 0}
-                  className="flex items-center space-x-2 px-4 py-2 text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition duration-200"
                 >
-                  <ChevronLeft className="h-4 w-4" />
-                  <span>Previous</span>
+                  Previous
                 </button>
 
-                <div className="flex items-center space-x-4">
-                  {isLastQuestion ? (
+                {currentQuestionIndex < questions.length - 1 ? (
                     <button
-                      onClick={() => setShowSubmitModal(true)}
-                      className="flex items-center space-x-2 bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700"
+                    onClick={() => handleQuestionNavigation('next')}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition duration-200"
                     >
-                      <Send className="h-4 w-4" />
-                      <span>Submit Assessment</span>
+                    Next
                     </button>
                   ) : (
                     <button
-                      onClick={nextQuestion}
-                      className="flex items-center space-x-2 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
+                    onClick={() => setShowConfirmSubmit(true)}
+                    className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition duration-200"
                     >
-                      <span>Next</span>
-                      <ChevronRight className="h-4 w-4" />
+                    Submit Assessment
                     </button>
                   )}
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
-      </div>
+          </CardContent>
+        </Card>
 
-      {/* Submit Confirmation Modal */}
-      <Modal isOpen={showSubmitModal} onClose={() => setShowSubmitModal(false)} title="Submit Assessment">
-        <div className="space-y-4">
-          <div className="flex items-start space-x-3">
-            <AlertTriangle className="h-6 w-6 text-amber-500 mt-1" />
-            <div>
-              <p className="text-gray-900 font-medium">Are you sure you want to submit?</p>
-              <p className="text-gray-600 text-sm mt-1">
-                You have answered {getAnsweredCount()} out of {session.questions.length} questions. Once submitted, you
-                cannot make any changes.
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-gray-500">Total Questions:</span>
-                <span className="ml-2 font-medium">{session.questions.length}</span>
-              </div>
-              <div>
-                <span className="text-gray-500">Answered:</span>
-                <span className="ml-2 font-medium">{getAnsweredCount()}</span>
-              </div>
-              <div>
-                <span className="text-gray-500">Time Remaining:</span>
-                <span className="ml-2 font-medium">{formatTime(timeRemaining)}</span>
-              </div>
-              <div>
-                <span className="text-gray-500">Unanswered:</span>
-                <span className="ml-2 font-medium">{session.questions.length - getAnsweredCount()}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-end space-x-3 pt-4">
+        {/* Question Navigation Dots */}
+        <div className="mt-6 flex justify-center space-x-2">
+          {questions.map((_, index) => (
             <button
-              onClick={() => setShowSubmitModal(false)}
-              className="px-4 py-2 text-gray-600 hover:text-gray-900"
-              disabled={submitting}
+              key={index}
+              onClick={() => setCurrentQuestionIndex(index)}
+              className={`w-3 h-3 rounded-full transition-colors ${
+                index === currentQuestionIndex 
+                  ? 'bg-blue-600' 
+                  : answers[questions[index]?.id] ? 'bg-green-400' : 'bg-gray-300'
+              }`}
+              title={`Question ${index + 1}${answers[questions[index]?.id] ? ' (Answered)' : ''}`}
+            />
+          ))}
+            </div>
+          </div>
+
+      <Footer />
+
+      {/* Confirm Submit Modal */}
+      <Modal
+        isOpen={showConfirmSubmit}
+        onClose={() => setShowConfirmSubmit(false)}
+        type="warning"
+        title="Confirm Submission"
+      >
+        <div className="text-center">
+          <p className="mb-4">Are you sure you want to submit this assessment?</p>
+          <p className="text-sm text-gray-600 mb-6">
+            You have answered {Object.keys(answers).length} out of {questions.length} questions.
+            This action cannot be undone.
+          </p>
+          <div className="flex justify-center space-x-3">
+            <button
+              onClick={() => setShowConfirmSubmit(false)}
+              className="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300"
             >
               Cancel
             </button>
             <button
-              onClick={() => {
-                setShowSubmitModal(false)
-                submitAssessment()
-              }}
-              disabled={submitting}
-              className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 disabled:opacity-50"
+              onClick={handleSubmit}
+              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
             >
-              {submitting ? "Submitting..." : "Submit Assessment"}
+              Submit Assessment
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Exit Confirmation Modal */}
+      <Modal
+        isOpen={showExitConfirm}
+        onClose={() => setShowExitConfirm(false)}
+        type="warning"
+        title="Exit Assessment"
+      >
+        <div className="text-center">
+          <p className="mb-4">Are you sure you want to exit this assessment?</p>
+          <p className="text-sm text-gray-600 mb-6">
+            Your progress will be saved automatically, and you can resume later.
+          </p>
+          <div className="flex justify-center space-x-3">
+            <button
+              onClick={() => setShowExitConfirm(false)}
+              className="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300"
+            >
+              Continue Assessment
+            </button>
+            <button
+              onClick={() => navigate("/student/dashboard")}
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+            >
+              Exit Assessment
             </button>
           </div>
         </div>

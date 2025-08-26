@@ -4,6 +4,12 @@ import dotenv from "dotenv"
 import { connectDB } from "./DB/db.js"
 import authRoutes from "./routes/authRoutes.js"
 import assessmentRoutes from "./routes/assessmentRoutes.js"
+import assessmentTakingRoutes from "./routes/assessmentTakingRoutes.js"
+import aiGenerationRoutes from "./routes/aiGenerationRoutes.js"
+import autoGradingRoutes from "./routes/autoGradingRoutes.js"
+import studentAnalyticsRoutes from "./routes/studentAnalyticsRoutes.js"
+import enrollmentRoutes from "./routes/enrollmentRoutes.js"
+import questionBankRoutes from "./routes/questionBankRoutes.js"
 import questionRoutes from "./routes/questionRoutes.js"
 import resourceRoutes from "./routes/resourceRoutes.js"
 import courseRoutes from "./routes/courseRoutes.js"
@@ -41,7 +47,21 @@ if (process.env.NODE_ENV === "development") {
 
 // Routes
 app.use("/api/auth", authRoutes)
+// Assessment taking routes (must come before general assessment routes to avoid conflicts)
+app.use("/api/assessments", assessmentTakingRoutes)
+
+// Assessment routes
 app.use("/api/assessments", assessmentRoutes)
+// AI Generation routes
+app.use("/api/ai-generation", aiGenerationRoutes)
+// Auto-grading routes
+app.use("/api/auto-grading", autoGradingRoutes)
+// Student analytics routes
+app.use("/api/student-analytics", studentAnalyticsRoutes)
+// Enhanced enrollment routes
+app.use("/api/enrollment", enrollmentRoutes)
+// Question bank routes
+app.use("/api/question-bank", questionBankRoutes)
 app.use("/api/questions", questionRoutes)
 app.use("/api/resources", resourceRoutes)
 app.use("/api/courses", courseRoutes)

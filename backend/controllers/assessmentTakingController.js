@@ -1,385 +1,310 @@
 import {
-  createAssessmentSession,
-  getAssessmentSession,
-  saveStudentAnswer,
+  startAssessmentAttempt,
+  saveProgress,
   submitAssessment,
-  getActiveSession,
-  getSubmission,
-  getAssessmentSubmissions,
-} from "../services/assessmentTakingService.js"
-import { getAssessmentById } from "../models/assessmentModel.js"
-import { loadQuestionsFromFile, getAssessmentQuestionFiles } from "../services/aiService.js"
+  getAttemptProgress,
+  checkResumeStatus
+} from "../models/assessmentTakingModel.js"
 import pool from "../DB/db.js"
 
-// Start assessment (create session)
-export const startAssessment = async (req, res) => {
+/**
+ * Assessment Taking Controller
+ * Handles all assessment taking related API endpoints
+ */
+
+/**
+ * Start a new assessment attempt
+ * @route POST /api/assessments/:id/start
+ */
+export const startAttempt = async (req, res) => {
   try {
-    const { assessmentId } = req.params
+    const assessmentId = parseInt(req.params.id)
     const studentId = req.user.id
 
-    console.log("🚀 Starting assessment:", assessmentId, "for student:", studentId)
+    console.log(`🚀 Student ${studentId} starting assessment ${assessmentId}`)
 
-    // Get assessment details
-    const assessment = await getAssessmentById(assessmentId)
-    if (!assessment) {
-      return res.status(404).json({
-        success: false,
-        message: "Assessment not found",
-      })
-    }
-
-    // Check if student is enrolled
-    const enrollmentCheck = await pool.query(
-      "SELECT id FROM assessment_enrollments WHERE assessment_id = $1 AND student_id = $2",
-      [assessmentId, studentId],
-    )
-
-    if (enrollmentCheck.rows.length === 0) {
+    // Validate user role
+    if (req.user.role !== "student") {
       return res.status(403).json({
         success: false,
-        message: "You are not enrolled in this assessment",
+        message: "Only students can take assessments"
       })
     }
 
-    // Check if assessment is published and within time bounds
-    if (!assessment.is_published) {
-      return res.status(400).json({
-        success: false,
-        message: "Assessment is not published yet",
-      })
-    }
+    // Start or resume attempt (includes availability checks)
+    const attemptData = await startAssessmentAttempt(assessmentId, studentId)
 
-    const now = new Date()
-    if (assessment.start_date && new Date(assessment.start_date) > now) {
-      return res.status(400).json({
-        success: false,
-        message: "Assessment has not started yet",
-      })
-    }
-
-    if (assessment.end_date && new Date(assessment.end_date) < now) {
-      return res.status(400).json({
-        success: false,
-        message: "Assessment has ended",
-      })
-    }
-
-    // Check if student already has an active session
-    const activeSession = await getActiveSession(assessmentId, studentId)
-    if (activeSession) {
-      console.log("📝 Returning existing active session")
-      return res.status(200).json({
-        success: true,
-        message: "Resuming existing session",
-        data: {
-          session_id: activeSession.session_id,
-          time_remaining: activeSession.time_remaining,
-          current_question: activeSession.current_question,
-          total_questions: activeSession.total_questions,
-        },
-      })
-    }
-
-    // Check if student has already submitted
-    const submissionCheck = await pool.query(
-      "SELECT id FROM assessment_enrollments WHERE assessment_id = $1 AND student_id = $2 AND status = 'completed'",
-      [assessmentId, studentId],
+    // Fetch minimal assessment details
+    const assessmentResult = await pool.query(
+      `SELECT id, title, description, duration, total_marks, passing_marks, is_published, start_date, end_date
+       FROM assessments WHERE id = $1`,
+      [assessmentId]
     )
 
-    if (submissionCheck.rows.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: "You have already completed this assessment",
-      })
+    const assessment = assessmentResult.rows[0] || null
+
+    // Fetch questions, if any have been generated and stored
+    // We rely on generated_questions table; if absent/empty, return an empty list
+    let questions = []
+    try {
+      const questionsResult = await pool.query(
+        `SELECT gq.id,
+                gq.question_text,
+                gq.question_type,
+                gq.options,
+                gq.correct_answer,
+                gq.explanation,
+                gq.marks AS marks,
+                gq.question_order,
+                qb.block_title
+           FROM generated_questions gq
+           JOIN question_blocks qb ON qb.id = gq.block_id
+          WHERE qb.assessment_id = $1
+          ORDER BY qb.block_order NULLS LAST, gq.question_order ASC, gq.id ASC`,
+        [assessmentId]
+      )
+      questions = questionsResult.rows || []
+    } catch (qErr) {
+      console.warn("⚠️ Unable to load generated questions (may not exist yet):", qErr.message)
+      questions = []
     }
 
-    // Load questions for the assessment
-    const questionFiles = await getAssessmentQuestionFiles(assessmentId)
-    if (questionFiles.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "No questions found for this assessment",
-      })
-    }
-
-    const allQuestions = []
-    for (const fileInfo of questionFiles) {
-      const questions = await loadQuestionsFromFile(assessmentId, fileInfo.block_title)
-      allQuestions.push(...questions)
-    }
-
-    if (allQuestions.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "No questions available for this assessment",
-      })
-    }
-
-    // Shuffle questions for randomization
-    const shuffledQuestions = allQuestions.sort(() => Math.random() - 0.5)
-
-    // Create assessment session
-    const session = await createAssessmentSession(assessmentId, studentId, shuffledQuestions, assessment.duration)
-
-    console.log("✅ Assessment session created successfully")
-
-    res.status(201).json({
+    return res.status(200).json({
       success: true,
-      message: "Assessment started successfully",
+      message: attemptData.resumed ? "Resuming previous attempt" : "Assessment attempt started",
       data: {
-        session_id: session.session_id,
-        assessment_title: assessment.title,
-        duration_minutes: assessment.duration,
-        total_questions: session.total_questions,
-        time_remaining: session.time_remaining,
-        start_time: session.start_time,
-        end_time: session.end_time,
-      },
+        ...attemptData,
+        assessment,
+        questions
+      }
     })
   } catch (error) {
-    console.error("❌ Start assessment error:", error)
-    res.status(500).json({
+    console.error("❌ Start attempt error:", error)
+
+    // Map common errors to clearer messages
+    let message = error.message || "Failed to start assessment attempt"
+    if (message.includes("not enrolled")) {
+      message = "You are not enrolled in this assessment. Please contact your instructor."
+    }
+    if (message.includes("not published")) {
+      message = "This assessment is not published yet."
+    }
+    if (message.includes("not started")) {
+      message = "This assessment has not started yet."
+    }
+    if (message.includes("expired")) {
+      message = "This assessment has expired."
+    }
+
+    res.status(400).json({
       success: false,
-      message: error.message || "Failed to start assessment",
+      message
     })
   }
 }
 
-// Get assessment session details
-export const getAssessmentSessionDetails = async (req, res) => {
+/**
+ * Save progress during assessment (autosave)
+ * @route POST /api/assessments/attempt/:attemptId/save
+ */
+export const saveAttemptProgress = async (req, res) => {
   try {
-    const { sessionId } = req.params
+    const attemptId = parseInt(req.params.attemptId)
+    const { answers, currentQuestion } = req.body
     const studentId = req.user.id
 
-    console.log("📖 Getting session details:", sessionId)
+    console.log(`💾 Saving progress for attempt ${attemptId} by student ${studentId}`)
 
-    const session = await getAssessmentSession(sessionId)
-    if (!session) {
-      return res.status(404).json({
-        success: false,
-        message: "Session not found",
-      })
-    }
-
-    // Check if session belongs to the student
-    if (session.student_id !== studentId) {
+    // Validate user role
+    if (req.user.role !== "student") {
       return res.status(403).json({
         success: false,
-        message: "Access denied",
+        message: "Only students can save assessment progress"
       })
     }
 
-    // Return session details without showing correct answers
-    const sessionDetails = {
-      session_id: session.session_id,
-      assessment_id: session.assessment_id,
-      status: session.status,
-      start_time: session.start_time,
-      end_time: session.end_time,
-      time_remaining: session.time_remaining,
-      current_question: session.current_question,
-      total_questions: session.total_questions,
-      questions: session.questions.map((q) => ({
-        id: q.id,
-        question_number: q.question_number,
-        question: q.question,
-        type: q.type,
-        marks: q.marks,
-        options: q.options,
-        student_answer: q.student_answer,
-        is_answered: q.is_answered,
-        // Don't send correct_answer or explanation during active session
-      })),
+    // Verify the attempt belongs to the student
+    const attemptCheck = await pool.query(
+      "SELECT student_id FROM assessment_attempts WHERE id = $1",
+      [attemptId]
+    )
+
+    if (attemptCheck.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Attempt not found"
+      })
     }
+
+    if (attemptCheck.rows[0].student_id !== studentId) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only save progress for your own attempts"
+      })
+    }
+
+    await saveProgress(attemptId, answers, currentQuestion)
 
     res.status(200).json({
       success: true,
-      data: sessionDetails,
+      message: "Progress saved successfully",
+      data: { saved_at: new Date() }
     })
   } catch (error) {
-    console.error("❌ Get session details error:", error)
+    console.error("❌ Save progress error:", error)
     res.status(500).json({
       success: false,
-      message: error.message || "Failed to get session details",
+      message: "Failed to save progress",
+      error: error.message
     })
   }
 }
 
-// Save answer for a question
-export const saveAnswer = async (req, res) => {
+/**
+ * Submit assessment attempt
+ * @route POST /api/assessments/attempt/:attemptId/submit
+ */
+export const submitAttempt = async (req, res) => {
   try {
-    const { sessionId } = req.params
-    const { questionNumber, answer, timeSpent = 0 } = req.body
+    const attemptId = parseInt(req.params.attemptId)
+    const { answers } = req.body
     const studentId = req.user.id
 
-    console.log("💾 Saving answer for session:", sessionId, "question:", questionNumber)
+    console.log(`📨 Submitting attempt ${attemptId} by student ${studentId}`)
 
-    const session = await getAssessmentSession(sessionId)
-    if (!session) {
-      return res.status(404).json({
-        success: false,
-        message: "Session not found",
-      })
-    }
-
-    // Check if session belongs to the student
-    if (session.student_id !== studentId) {
+    // Validate user role
+    if (req.user.role !== "student") {
       return res.status(403).json({
         success: false,
-        message: "Access denied",
+        message: "Only students can submit assessments"
       })
     }
 
-    if (session.status !== "active") {
-      return res.status(400).json({
-        success: false,
-        message: "Session is not active",
-      })
-    }
-
-    const updatedSession = await saveStudentAnswer(sessionId, questionNumber, answer, timeSpent)
-
-    res.status(200).json({
-      success: true,
-      message: "Answer saved successfully",
-      data: {
-        question_number: questionNumber,
-        answer: answer,
-        time_remaining: updatedSession.time_remaining,
-      },
-    })
-  } catch (error) {
-    console.error("❌ Save answer error:", error)
-    res.status(500).json({
-      success: false,
-      message: error.message || "Failed to save answer",
-    })
-  }
-}
-
-// Submit assessment
-export const submitAssessmentController = async (req, res) => {
-  try {
-    const { sessionId } = req.params
-    const studentId = req.user.id
-
-    console.log("🎯 Submitting assessment for session:", sessionId)
-
-    const session = await getAssessmentSession(sessionId)
-    if (!session) {
-      return res.status(404).json({
-        success: false,
-        message: "Session not found",
-      })
-    }
-
-    // Check if session belongs to the student
-    if (session.student_id !== studentId) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied",
-      })
-    }
-
-    const submission = await submitAssessment(sessionId)
-
-    // Update enrollment status
-    await pool.query(
-      "UPDATE assessment_enrollments SET status = 'completed', score = $1, completed_at = CURRENT_TIMESTAMP WHERE assessment_id = $2 AND student_id = $3",
-      [submission.percentage, session.assessment_id, studentId],
+    // Verify the attempt belongs to the student
+    const attemptCheck = await pool.query(
+      "SELECT student_id FROM assessment_attempts WHERE id = $1",
+      [attemptId]
     )
 
-    console.log("✅ Assessment submitted successfully")
+    if (attemptCheck.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Attempt not found"
+      })
+    }
+
+    if (attemptCheck.rows[0].student_id !== studentId) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only submit your own attempts"
+      })
+    }
+
+    // Submit attempt using model (handles time_taken in SQL)
+    const result = await submitAssessment(attemptId, answers)
 
     res.status(200).json({
       success: true,
       message: "Assessment submitted successfully",
-      data: {
-        submission_id: submission.submission_id,
-        total_questions: submission.total_questions,
-        answered_questions: submission.answered_questions,
-        total_marks: submission.total_marks,
-        scored_marks: submission.scored_marks,
-        percentage: submission.percentage,
-        duration_taken: submission.duration_taken,
-        needs_manual_grading: submission.needs_manual_grading,
-      },
+      data: result
     })
   } catch (error) {
-    console.error("❌ Submit assessment error:", error)
+    console.error("❌ Submit attempt error:", error)
     res.status(500).json({
       success: false,
-      message: error.message || "Failed to submit assessment",
+      message: "Failed to submit assessment",
+      error: error.message
     })
   }
 }
 
-// Get submission details
-export const getSubmissionDetails = async (req, res) => {
+/**
+ * Get attempt progress
+ * @route GET /api/assessments/attempt/:attemptId/progress
+ */
+export const getProgress = async (req, res) => {
   try {
-    const { submissionId } = req.params
+    const attemptId = parseInt(req.params.attemptId)
+    const progress = await getAttemptProgress(attemptId)
+
+    res.status(200).json({
+      success: true,
+      message: "Attempt progress retrieved successfully",
+      data: progress
+    })
+  } catch (error) {
+    console.error("❌ Get progress error:", error)
+    res.status(500).json({
+      success: false,
+      message: "Failed to retrieve progress",
+      error: error.message
+    })
+  }
+}
+
+/**
+ * Check resume status for an assessment
+ * @route GET /api/assessments/:id/resume-status
+ */
+export const getResumeStatus = async (req, res) => {
+  try {
+    const assessmentId = parseInt(req.params.id)
     const studentId = req.user.id
 
-    console.log("📊 Getting submission details:", submissionId)
-
-    const submission = await getSubmission(submissionId)
-    if (!submission) {
-      return res.status(404).json({
-        success: false,
-        message: "Submission not found",
-      })
-    }
-
-    // Check if submission belongs to the student (or instructor/admin)
-    if (req.user.role === "student" && submission.student_id !== studentId) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied",
-      })
-    }
+    const status = await checkResumeStatus(assessmentId, studentId)
 
     res.status(200).json({
       success: true,
-      data: submission,
+      message: "Resume status retrieved successfully",
+      data: status
     })
   } catch (error) {
-    console.error("❌ Get submission details error:", error)
+    console.error("❌ Get resume status error:", error)
     res.status(500).json({
       success: false,
-      message: error.message || "Failed to get submission details",
+      message: "Failed to retrieve resume status",
+      error: error.message
     })
   }
 }
 
-// Get all submissions for an assessment (instructor/admin only)
-export const getAssessmentSubmissionsController = async (req, res) => {
+/**
+ * Get timer info for an assessment
+ * @route GET /api/assessments/:id/timer
+ */
+export const getTimerInfo = async (req, res) => {
   try {
-    const { assessmentId } = req.params
+    const assessmentId = parseInt(req.params.id)
+    const studentId = req.user.id
 
-    console.log("📊 Getting submissions for assessment:", assessmentId)
+    // Get latest attempt (in progress)
+    const { rows } = await pool.query(
+      `SELECT id, start_time, status
+         FROM assessment_attempts
+        WHERE assessment_id = $1 AND student_id = $2
+        ORDER BY start_time DESC
+        LIMIT 1`,
+      [assessmentId, studentId]
+    )
 
-    // Check if user has access to this assessment
-    if (req.user.role === "instructor") {
-      const assessment = await getAssessmentById(assessmentId)
-      if (!assessment || assessment.instructor_id !== req.user.id) {
-        return res.status(403).json({
-          success: false,
-          message: "Access denied",
-        })
-      }
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No attempt found for this assessment"
+      })
     }
-
-    const submissions = await getAssessmentSubmissions(assessmentId)
 
     res.status(200).json({
       success: true,
-      data: submissions,
+      message: "Timer info retrieved successfully",
+      data: rows[0]
     })
   } catch (error) {
-    console.error("❌ Get assessment submissions error:", error)
+    console.error("❌ Get timer info error:", error)
     res.status(500).json({
       success: false,
-      message: error.message || "Failed to get submissions",
+      message: "Failed to retrieve timer info",
+      error: error.message
     })
   }
 }

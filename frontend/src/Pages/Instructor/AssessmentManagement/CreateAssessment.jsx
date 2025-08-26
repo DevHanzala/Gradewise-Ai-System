@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import useAssessmentStore from "../../../store/assessmentStore.js"
 import { Card, CardHeader, CardContent } from "../../../components/ui/Card"
@@ -22,6 +22,7 @@ function CreateAssessment() {
     is_published: false,
     start_date: "",
     end_date: "",
+    externalLinks: [""],
     // Removed course_id - not needed for this assessment system
   })
 
@@ -49,6 +50,11 @@ function CreateAssessment() {
 
   const handleBlockChange = (index, field, value) => {
     setQuestionBlocks((prev) => prev.map((block, i) => (i === index ? { ...block, [field]: value } : block)))
+    
+    // Update duration when question blocks change
+    if (field === 'question_count' || field === 'difficulty_level') {
+      updateDuration()
+    }
   }
 
   const addQuestionBlock = () => {
@@ -64,11 +70,13 @@ function CreateAssessment() {
         topics: [],
       },
     ])
+    updateDuration()
   }
 
   const removeQuestionBlock = (index) => {
     if (questionBlocks.length > 1) {
       setQuestionBlocks((prev) => prev.filter((_, i) => i !== index))
+      updateDuration()
     }
   }
 
@@ -88,6 +96,56 @@ function CreateAssessment() {
       ),
     )
   }
+
+  // Resource management functions
+  const handleResourceUpload = (e) => {
+    const files = Array.from(e.target.files)
+    // Handle file uploads - will be processed in backend
+    console.log("Files selected:", files)
+  }
+
+  const addExternalLink = () => {
+    setFormData(prev => ({
+      ...prev,
+      externalLinks: [...prev.externalLinks, ""]
+    }))
+  }
+
+  const removeExternalLink = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      externalLinks: prev.externalLinks.filter((_, i) => i !== index)
+    }))
+  }
+
+  const handleExternalLinkChange = (index, value) => {
+    setFormData(prev => ({
+      ...prev,
+      externalLinks: prev.externalLinks.map((link, i) => i === index ? value : link)
+    }))
+  }
+
+  // Calculate and update duration based on question blocks
+  const updateDuration = () => {
+    const totalQuestions = questionBlocks.reduce((total, block) => total + (block.question_count || 1), 0)
+    const averageComplexity = questionBlocks.reduce((total, block) => {
+      const complexity = block.difficulty_level === 'easy' ? 1 : block.difficulty_level === 'medium' ? 1.5 : 2
+      return total + complexity
+    }, 0) / questionBlocks.length
+    
+    // Base time: 2 minutes per question + complexity factor
+    const calculatedDuration = Math.ceil(totalQuestions * 2 * averageComplexity)
+    
+    setFormData(prev => ({
+      ...prev,
+      duration: calculatedDuration
+    }))
+  }
+
+  // Initialize duration on component mount
+  useEffect(() => {
+    updateDuration()
+  }, [])
 
   const showModal = (type, title, message) => {
     setModal({ isOpen: true, type, title, message })
@@ -181,17 +239,14 @@ function CreateAssessment() {
 
                 <div>
                   <label htmlFor="duration" className="block text-sm font-medium text-gray-700 mb-2">
-                    Duration (minutes)
+                    Duration (minutes) - AI Calculated
                   </label>
-                  <input
-                    type="number"
-                    id="duration"
-                    name="duration"
-                    value={formData.duration}
-                    onChange={handleInputChange}
-                    min="1"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                  <div className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-md text-gray-600">
+                    {formData.duration} minutes
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Duration automatically calculated based on question count and complexity
+                  </p>
                 </div>
               </div>
 
@@ -288,6 +343,61 @@ function CreateAssessment() {
                     onChange={handleInputChange}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
+                </div>
+              </div>
+
+              {/* Resource Upload Section */}
+              <div className="border-t pt-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Learning Resources</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Upload Study Materials
+                    </label>
+                    <input
+                      type="file"
+                      multiple
+                      accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif"
+                      onChange={handleResourceUpload}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Upload PDFs, documents, images to help students prepare (Max: 10MB each)
+                    </p>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      External Links
+                    </label>
+                    <div className="space-y-2">
+                      {formData.externalLinks.map((link, index) => (
+                        <div key={index} className="flex space-x-2">
+                          <input
+                            type="url"
+                            placeholder="https://example.com/resource"
+                            value={link}
+                            onChange={(e) => handleExternalLinkChange(index, e.target.value)}
+                            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeExternalLink(index)}
+                            className="px-3 py-2 text-red-600 hover:text-red-800"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={addExternalLink}
+                        className="text-blue-600 hover:text-blue-800 text-sm"
+                      >
+                        + Add Another Link
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
 

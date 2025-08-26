@@ -25,7 +25,12 @@ function InstructorDashboard() {
         await getInstructorAssessments()
         // Only fetch overview if the function exists
         if (getInstructorOverview) {
-          await getInstructorOverview()
+          try {
+            await getInstructorOverview()
+          } catch (overviewError) {
+            console.warn("Failed to fetch overview data, but assessments loaded successfully:", overviewError)
+            // Don't show error modal for overview failure, just log it
+          }
         }
       } catch (error) {
         console.error("Failed to fetch dashboard data:", error)
@@ -104,21 +109,36 @@ function InstructorDashboard() {
                 <CardContent className="text-center">
                   <div className="text-3xl font-bold text-green-600">{overview?.students || 0}</div>
                   <div className="text-gray-600">Enrolled Students</div>
+                  {!overview && <div className="text-xs text-gray-400 mt-1">Loading...</div>}
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="text-center">
                   <div className="text-3xl font-bold text-orange-600">{overview?.pendingGrades || 0}</div>
                   <div className="text-gray-600">Pending Grades</div>
+                  {!overview && <div className="text-xs text-gray-400 mt-1">Loading...</div>}
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="text-center">
                   <div className="text-3xl font-bold text-purple-600">{overview?.totalAttempts || 0}</div>
                   <div className="text-gray-600">Total Attempts</div>
+                  {!overview && <div className="text-xs text-gray-400 mt-1">Loading...</div>}
                 </CardContent>
               </Card>
             </div>
+
+            {/* Overview Error Message */}
+            {!overview && (
+              <Card className="mb-8">
+                <CardContent className="text-center py-6">
+                  <div className="text-yellow-600 text-lg mb-2">⚠️ Dashboard Overview</div>
+                  <p className="text-gray-600">
+                    Some dashboard statistics are still loading. This is normal and won't affect your assessment management.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Quick Actions */}
             <Card className="mb-8">
@@ -236,21 +256,21 @@ function InstructorDashboard() {
                 </div>
               </CardHeader>
               <CardContent>
-                {overview?.recentActivity?.length > 0 ? (
+                {overview?.recentEnrollments?.length > 0 ? (
                   <div className="space-y-4">
-                    {overview.recentActivity.map((activity, index) => (
+                    {overview.recentEnrollments.map((activity, index) => (
                       <div key={index} className="flex items-center space-x-3">
                         <div className="flex-shrink-0">
-                          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                            <span className="text-blue-600 text-sm">📝</span>
+                          <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                            <span className="text-green-600 text-sm">👥</span>
                           </div>
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-gray-900">
-                            {activity.student_name} {activity.action}
+                            {activity.student_name} enrolled in {activity.assessment_title}
                           </p>
                           <p className="text-sm text-gray-500">
-                            {activity.assessment_title} • {new Date(activity.created_at).toLocaleString()}
+                            {new Date(activity.enrolled_at).toLocaleString()}
                           </p>
                         </div>
                       </div>
@@ -260,7 +280,7 @@ function InstructorDashboard() {
                   <div className="text-center py-8">
                     <div className="text-4xl mb-4">📊</div>
                     <h3 className="text-lg font-medium text-gray-900 mb-2">No Recent Activity</h3>
-                    <p className="text-gray-600">Activity from your assessments will appear here.</p>
+                    <p className="text-gray-600">Student enrollments in your assessments will appear here.</p>
                   </div>
                 )}
               </CardContent>

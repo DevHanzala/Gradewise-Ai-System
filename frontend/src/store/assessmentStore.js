@@ -288,6 +288,7 @@ getStudentAssessments: async () => {
   // Get Enrolled Students
   getEnrolledStudents: async (assessmentId) => {
     try {
+      console.log(`🔍 getEnrolledStudents: Starting to fetch enrolled students for assessment ${assessmentId}`)
       set({ loading: true, error: null })
 
       const token = localStorage.getItem("token")
@@ -295,17 +296,22 @@ getStudentAssessments: async () => {
         headers: { Authorization: `Bearer ${token}` },
       })
 
+      console.log(`📡 getEnrolledStudents: API Response:`, response.data)
+
       if (response.data.success) {
+        console.log(`✅ getEnrolledStudents: Setting enrolled students:`, response.data.data)
         set({
           enrolledStudents: response.data.data || [],
           loading: false,
         })
         return response.data.data
+      } else {
+        console.log(`❌ getEnrolledStudents: Response not successful:`, response.data)
       }
     } catch (error) {
       const errorMessage = error.response?.data?.message || "Failed to fetch enrolled students"
+      console.error(`❌ getEnrolledStudents: Error:`, error)
       set({ error: errorMessage, loading: false, enrolledStudents: [] })
-      console.error("Get enrolled students error:", error)
       throw error
     }
   },

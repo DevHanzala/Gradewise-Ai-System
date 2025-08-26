@@ -34,11 +34,15 @@ function EnrollStudents() {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        console.log("🔄 EnrollStudents: Starting to fetch data...")
         await getAssessmentById(assessmentId)
+        console.log("✅ EnrollStudents: Assessment data fetched")
         await getEnrolledStudents(assessmentId)
+        console.log("✅ EnrollStudents: Enrolled students fetched")
         await fetchAvailableStudents()
+        console.log("✅ EnrollStudents: Available students fetched")
       } catch (error) {
-        console.error("Failed to fetch data:", error)
+        console.error("❌ EnrollStudents: Failed to fetch data:", error)
         toast.error("Failed to load enrollment data")
       }
     }
@@ -52,16 +56,10 @@ function EnrollStudents() {
     try {
       const token = localStorage.getItem("token")
       if (!token) {
-        // No token available
         return
       }
 
-      // Only admins/super_admins can list all users from /auth/users
-      if (!user || (user.role !== "admin" && user.role !== "super_admin")) {
-        return
-      }
-
-      const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000/api"}/auth/users`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000/api"}/assessments/${assessmentId}/available-students`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -69,14 +67,16 @@ function EnrollStudents() {
 
       if (response.ok) {
         const data = await response.json()
-        const students = data.users?.filter((user) => user.role === "student") || []
-        setAvailableStudents(students)
+        if (data.success) {
+          setAvailableStudents(data.data || [])
+        }
       } else if (response.status === 401 || response.status === 403) {
-        // Not authorized to view all users; silently ignore and let manual email enrollment be used
+        // Not authorized; silently ignore and let manual email enrollment be used
         setAvailableStudents([])
       }
     } catch (error) {
-      console.error("Failed to fetch students:", error)
+      console.error("Failed to fetch available students:", error)
+      setAvailableStudents([])
     }
   }
 
@@ -355,6 +355,11 @@ function EnrollStudents() {
                 <h2 className="text-xl font-semibold text-gray-900">
                   Currently Enrolled ({enrolledStudents?.length || 0})
                 </h2>
+                {enrolledStudents && (
+                  <div className="text-sm text-gray-500">
+                    Debug: {JSON.stringify(enrolledStudents)}
+                  </div>
+                )}
               </CardHeader>
               <CardContent>
                 {enrolledStudents && enrolledStudents.length > 0 ? (

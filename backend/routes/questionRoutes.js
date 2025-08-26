@@ -10,6 +10,7 @@ import {
   duplicateQuestionHandler,
   getQuestionStatsHandler,
   generateAssessmentQuestions,
+  storeQuestionBlocksHandler,
   importQuestionsHandler,
   exportQuestionsHandler,
   importFromFormatHandler,
@@ -38,6 +39,7 @@ router.get("/assessment/:assessmentId/stats", getQuestionStatsHandler)
 
 // AI question generation
 router.post("/assessment/:assessmentId/generate", authorizeRoles("instructor", "admin"), generateAssessmentQuestions)
+router.post("/assessment/:assessmentId/blocks", authorizeRoles("instructor", "admin"), storeQuestionBlocksHandler)
 
 // Import/Export operations
 router.post("/assessment/:assessmentId/import", authorizeRoles("instructor", "admin"), importQuestionsHandler)

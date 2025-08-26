@@ -368,12 +368,12 @@ export const getStudentAssessments = async (student_id) => {
       u.name AS instructor_name,
       ae.enrolled_at,
       (SELECT COUNT(*) FROM questions WHERE assessment_id = a.id) AS question_count,
-      aa.submitted_at,
-      aa.time_taken,
-      COALESCE(aa.total_score, 0) as total_score,
-      COALESCE(aa.percentage, 0) as percentage,
+      latest_attempt.submitted_at,
+      latest_attempt.time_taken,
+      COALESCE(latest_attempt.total_score, 0) as total_score,
+      COALESCE(latest_attempt.percentage, 0) as percentage,
       CASE 
-        WHEN aa.status = 'submitted' OR aa.status = 'evaluated' THEN 'completed'
+        WHEN latest_attempt.status = 'submitted' OR latest_attempt.status = 'evaluated' THEN 'completed'
         WHEN a.end_date < NOW() THEN 'expired'
         WHEN a.start_date > NOW() THEN 'upcoming'
         ELSE 'pending'
@@ -382,9 +382,12 @@ export const getStudentAssessments = async (student_id) => {
     JOIN assessments a ON ae.assessment_id = a.id
     LEFT JOIN courses c ON a.course_id = c.id
     LEFT JOIN users u ON a.instructor_id = u.id
-    LEFT JOIN assessment_attempts aa 
-      ON a.id = aa.assessment_id 
-     AND ae.student_id = aa.student_id
+    LEFT JOIN LATERAL (
+      SELECT * FROM assessment_attempts 
+      WHERE assessment_id = a.id AND student_id = ae.student_id
+      ORDER BY start_time DESC 
+      LIMIT 1
+    ) latest_attempt ON true
     WHERE ae.student_id = $1
     ORDER BY a.end_date ASC, a.created_at DESC
   `
@@ -634,6 +637,7 @@ export const ensureAssessmentsTable = async () => {
           duration INTEGER DEFAULT 60,
           total_marks INTEGER DEFAULT 100,
           passing_marks INTEGER DEFAULT 50,
+          max_attempts INTEGER DEFAULT 1,
           instructions TEXT,
           is_published BOOLEAN DEFAULT FALSE,
           start_date TIMESTAMP WITH TIME ZONE,
@@ -774,6 +778,189 @@ export const ensureAssessmentsTable = async () => {
       }
     }
 
+    // Ensure assessment attempts table exists
+    await ensureAssessmentAttemptsTable()
+
+    // Check if ai_generation_audit_logs table exists
+    const auditLogsCheck = await db.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'ai_generation_audit_logs'
+      )
+    `)
+
+    if (!auditLogsCheck.rows[0].exists) {
+      console.log("Creating ai_generation_audit_logs table...")
+
+      // Create ai_generation_audit_logs table
+      await db.query(`
+        CREATE TABLE ai_generation_audit_logs (
+          id SERIAL PRIMARY KEY,
+          assessment_id INTEGER NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
+          instructor_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          action VARCHAR(100) NOT NULL,
+          block_title VARCHAR(255),
+          question_count INTEGER,
+          question_type VARCHAR(50),
+          difficulty_level VARCHAR(20),
+          topics TEXT[],
+          status VARCHAR(20) DEFAULT 'in_progress',
+          questions_generated INTEGER,
+          ai_response TEXT,
+          error_message TEXT,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+      `)
+
+      // Create indexes
+      await db.query(`
+        CREATE INDEX idx_ai_audit_assessment_id ON ai_generation_audit_logs(assessment_id);
+        CREATE INDEX idx_ai_audit_instructor_id ON ai_generation_audit_logs(instructor_id);
+        CREATE INDEX idx_ai_audit_created_at ON ai_generation_audit_logs(created_at);
+      `)
+
+      console.log("✅ ai_generation_audit_logs table created successfully")
+    }
+
+    // Create question_bank table if it doesn't exist
+    const questionBankCheck = await db.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'question_bank'
+      )
+    `)
+
+    if (!questionBankCheck.rows[0].exists) {
+      console.log("Creating question_bank table...")
+      await db.query(`
+        CREATE TABLE question_bank (
+          id SERIAL PRIMARY KEY,
+          instructor_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+          question_text TEXT NOT NULL,
+          question_type VARCHAR(50) NOT NULL,
+          difficulty_level VARCHAR(50) DEFAULT 'medium',
+          topics TEXT[],
+          options JSONB,
+          correct_answer TEXT,
+          explanation TEXT,
+          marks_per_question INTEGER DEFAULT 1,
+          tags TEXT[],
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW()
+        )
+      `)
+      await db.query(`
+        CREATE INDEX idx_question_bank_instructor ON question_bank(instructor_id);
+        CREATE INDEX idx_question_bank_type ON question_bank(question_type);
+        CREATE INDEX idx_question_bank_difficulty ON question_bank(difficulty_level);
+        CREATE INDEX idx_question_bank_topics ON question_bank USING GIN(topics);
+        CREATE INDEX idx_question_bank_tags ON question_bank USING GIN(tags);
+      `)
+      console.log("✅ question_bank table created successfully")
+    } else {
+      console.log("✅ question_bank table already exists")
+    }
+
+    // Create question_assignments table if it doesn't exist
+    const questionAssignmentsCheck = await db.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'question_assignments'
+      )
+    `)
+
+    if (!questionAssignmentsCheck.rows[0].exists) {
+      console.log("Creating question_assignments table...")
+      await db.query(`
+        CREATE TABLE question_assignments (
+          id SERIAL PRIMARY KEY,
+          question_bank_id INTEGER REFERENCES question_bank(id) ON DELETE CASCADE,
+          assessment_id INTEGER REFERENCES assessments(id) ON DELETE CASCADE,
+          assigned_at TIMESTAMP DEFAULT NOW(),
+          UNIQUE(question_bank_id, assessment_id)
+        )
+      `)
+      await db.query(`
+        CREATE INDEX idx_question_assignments_bank ON question_assignments(question_bank_id);
+        CREATE INDEX idx_question_assignments_assessment ON question_assignments(assessment_id);
+      `)
+      console.log("✅ question_assignments table created successfully")
+    } else {
+      console.log("✅ question_assignments table already exists")
+    }
+
+    // Check if questions table exists
+    const questionsCheck = await db.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'questions'
+      )
+    `)
+
+    if (!questionsCheck.rows[0].exists) {
+      console.log("Creating questions table...")
+
+      // Create questions table
+      await db.query(`
+        CREATE TABLE questions (
+          id SERIAL PRIMARY KEY,
+          assessment_id INTEGER NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
+          question_number INTEGER NOT NULL,
+          question_text TEXT NOT NULL,
+          question_type VARCHAR(50) NOT NULL,
+          options TEXT[],
+          correct_answer TEXT,
+          expected_answer TEXT,
+          rubric JSONB,
+          marks INTEGER NOT NULL DEFAULT 1,
+          difficulty_level VARCHAR(20) DEFAULT 'medium',
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+      `)
+
+      console.log("✅ questions table created successfully")
+    }
+
+    // Check if student_answers table exists
+    const studentAnswersCheck = await db.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'student_answers'
+      )
+    `)
+
+    if (!studentAnswersCheck.rows[0].exists) {
+      console.log("Creating student_answers table...")
+
+      // Create student_answers table
+      await db.query(`
+        CREATE TABLE student_answers (
+          id SERIAL PRIMARY KEY,
+          attempt_id INTEGER NOT NULL REFERENCES assessment_attempts(id) ON DELETE CASCADE,
+          question_id INTEGER NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+          answer_text TEXT,
+          selected_options TEXT[],
+          scored_marks INTEGER DEFAULT 0,
+          grading_method VARCHAR(50) DEFAULT 'pending',
+          feedback TEXT,
+          grading_notes TEXT,
+          graded_at TIMESTAMP WITH TIME ZONE,
+          overridden_by INTEGER REFERENCES users(id),
+          overridden_at TIMESTAMP WITH TIME ZONE,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+      `)
+
+      console.log("✅ student_answers table created successfully")
+    }
+
     return true
   } catch (error) {
     console.error("❌ Error creating assessments tables:", error)
@@ -852,9 +1039,15 @@ export const ensureAssessmentAttemptsTable = async () => {
           id SERIAL PRIMARY KEY,
           assessment_id INTEGER NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
           student_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          correct_answers INTEGER NOT NULL DEFAULT 0,
-          total_questions INTEGER NOT NULL DEFAULT 0,
+          start_time TIMESTAMP NOT NULL DEFAULT NOW(),
+          time_limit INTEGER NOT NULL DEFAULT 3600, -- in seconds
+          status VARCHAR(20) DEFAULT 'in_progress', -- in_progress, submitted, expired
+          current_question INTEGER DEFAULT 1,
+          last_saved TIMESTAMP,
+          submitted_at TIMESTAMP,
           time_taken INTEGER, -- in seconds
+          grade INTEGER, -- numerical grade
+          percentage DECIMAL(5,2), -- percentage score
           created_at TIMESTAMP NOT NULL DEFAULT NOW(),
           UNIQUE(assessment_id, student_id)
         )
@@ -867,6 +1060,68 @@ export const ensureAssessmentAttemptsTable = async () => {
       `)
 
       console.log("✅ assessment_attempts table created successfully")
+    } else {
+      console.log("✅ assessment_attempts table already exists - checking for missing columns...")
+      
+      // Check if submitted_at column exists, if not add it
+      const submittedAtCheck = await db.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.columns 
+          WHERE table_name = 'assessment_attempts' 
+          AND column_name = 'submitted_at'
+        )
+      `)
+      
+      if (!submittedAtCheck.rows[0].exists) {
+        console.log("Adding missing submitted_at column to assessment_attempts table...")
+        await db.query(`
+          ALTER TABLE assessment_attempts 
+          ADD COLUMN submitted_at TIMESTAMP
+        `)
+        console.log("✅ submitted_at column added successfully")
+      } else {
+        console.log("✅ submitted_at column already exists")
+      }
+      
+      // Check if grade column exists, if not add it
+      const gradeCheck = await db.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.columns 
+          WHERE table_name = 'assessment_attempts' 
+          AND column_name = 'grade'
+        )
+      `)
+      
+      if (!gradeCheck.rows[0].exists) {
+        console.log("Adding missing grade column to assessment_attempts table...")
+        await db.query(`
+          ALTER TABLE assessment_attempts 
+          ADD COLUMN grade INTEGER
+        `)
+        console.log("✅ grade column added successfully")
+      } else {
+        console.log("✅ grade column already exists")
+      }
+      
+      // Check if percentage column exists, if not add it
+      const percentageCheck = await db.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.columns 
+          WHERE table_name = 'assessment_attempts' 
+          AND column_name = 'percentage'
+        )
+      `)
+      
+      if (!percentageCheck.rows[0].exists) {
+        console.log("Adding missing percentage column to assessment_attempts table...")
+        await db.query(`
+          ALTER TABLE assessment_attempts 
+          ADD COLUMN percentage DECIMAL(5,2)
+        `)
+        console.log("✅ percentage column added successfully")
+      } else {
+        console.log("✅ percentage column already exists")
+      }
     }
 
     // Check if student_answers table exists
@@ -886,17 +1141,19 @@ export const ensureAssessmentAttemptsTable = async () => {
         CREATE TABLE student_answers (
           id SERIAL PRIMARY KEY,
           attempt_id INTEGER NOT NULL REFERENCES assessment_attempts(id) ON DELETE CASCADE,
-          question_id INTEGER NOT NULL,
-          user_answer TEXT,
-          is_correct BOOLEAN NOT NULL DEFAULT FALSE,
-          created_at TIMESTAMP NOT NULL DEFAULT NOW()
+          question_id INTEGER NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+          answer_text TEXT,
+          selected_options TEXT[],
+          scored_marks INTEGER DEFAULT 0,
+          grading_method VARCHAR(50) DEFAULT 'pending',
+          feedback TEXT,
+          grading_notes TEXT,
+          graded_at TIMESTAMP WITH TIME ZONE,
+          overridden_by INTEGER REFERENCES users(id),
+          overridden_at TIMESTAMP WITH TIME ZONE,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         )
-      `)
-
-      // Create indexes
-      await db.query(`
-        CREATE INDEX idx_student_answers_attempt_id ON student_answers(attempt_id);
-        CREATE INDEX idx_student_answers_question_id ON student_answers(question_id);
       `)
 
       console.log("✅ student_answers table created successfully")

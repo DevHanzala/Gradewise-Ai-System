@@ -649,6 +649,39 @@ export const loadFromFileHandler = async (req, res) => {
 }
 
 /**
+ * Store question blocks for an assessment
+ */
+export const storeQuestionBlocksHandler = async (req, res) => {
+  try {
+    const { assessmentId } = req.params
+    const { questions } = req.body
+    const instructorId = req.user.id
+
+    console.log(`📝 Storing ${questions.length} question blocks for assessment ${assessmentId}`)
+
+    // Import the storeQuestionBlocks function from assessmentModel
+    const { storeQuestionBlocks } = await import("../models/assessmentModel.js")
+    
+    // Store the question blocks
+    const result = await storeQuestionBlocks(assessmentId, questions, instructorId)
+
+    res.json({
+      success: true,
+      message: "Question blocks stored successfully",
+      data: result
+    })
+
+  } catch (error) {
+    console.error("❌ Store question blocks error:", error)
+    res.status(500).json({
+      success: false,
+      message: "Failed to store question blocks",
+      error: error.message
+    })
+  }
+}
+
+/**
  * Delete question files
  */
 export const deleteQuestionFilesHandler = async (req, res) => {
