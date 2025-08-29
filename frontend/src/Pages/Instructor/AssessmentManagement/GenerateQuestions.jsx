@@ -73,8 +73,23 @@ const GenerateQuestions = () => {
       const data = await response.json()
 
       if (data.success) {
-        toast.success("Questions generated successfully!")
-        await loadExistingQuestions()
+        const storeResponse = await fetch(`${API_URL}/questions/assessment/${assessmentId}/blocks`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ question_blocks: data.data }),
+        })
+
+        const storeData = await storeResponse.json()
+
+        if (storeData.success) {
+          toast.success("Questions generated and saved successfully!")
+          await loadExistingQuestions()
+        } else {
+          toast.error(storeData.message || "Failed to save questions to database")
+        }
       } else {
         toast.error(data.message || "Failed to generate questions")
       }
@@ -393,10 +408,7 @@ const GenerateQuestions = () => {
                         return (
                           <div
                             key={optionIndex}
-                            className={`
-                              p-3 rounded-lg border
-                              ${isCorrect ? "border-green-500 bg-green-50" : "border-gray-200"}
-                            `}
+                            className={`p-3 rounded-lg border ${isCorrect ? "border-green-500 bg-green-50" : "border-gray-200"}`}
                           >
                             <div className="flex items-center justify-between">
                               <span className="text-gray-900">{option}</span>

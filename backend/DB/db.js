@@ -1,6 +1,5 @@
 import pkg from "pg"
 import dotenv from "dotenv"
-// import { createUserTable } from "../models/userModel.js"
 
 // Load environment variables
 dotenv.config()
@@ -27,10 +26,6 @@ export const connectDB = async () => {
     // Test the connection
     const client = await pool.connect()
     console.log("✅ Connected to PostgreSQL database successfully!")
-
-    // Create all tables in the correct order (respecting foreign key dependencies)
-    // await createUserTable() // Users table must be created first
-
     console.log("✅ All database tables checked/created successfully")
     client.release()
   } catch (error) {

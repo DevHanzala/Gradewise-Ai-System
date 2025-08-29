@@ -315,7 +315,7 @@ export const sendRoleChangeEmail = async (email, name, oldRole, newRole) => {
  * Send assessment enrollment email to students
  */
 export const sendAssessmentEnrollmentEmail = async (email, name, assessmentTitle, courseTitle, dueDate) => {
-  const dashboardUrl = `${process.env.FRONTEND_URL}/dashboard`
+  const dashboardUrl = `${process.env.FRONTEND_URL}/student/dashboard`
 
   const subject = `New Assessment Available: ${assessmentTitle}`
   const htmlContent = `

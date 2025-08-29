@@ -14,6 +14,7 @@ import {
   unenrollStudent,
   getAllAssessmentList,
   toggleAssessmentPublish,
+  storeAssessmentQuestionBlocks, // Added missing import
 } from "../controllers/assessmentController.js"
 
 const router = express.Router()
@@ -40,5 +41,7 @@ router.post("/:id/enroll-bulk", authorizeRoles("instructor", "admin"), enrollMul
 router.get("/:id/students", authorizeRoles("instructor", "admin"), getAssessmentStudents)
 router.get("/:id/available-students", authorizeRoles("instructor", "admin"), getAvailableStudents)
 router.delete("/:id/students/:studentId", authorizeRoles("instructor", "admin"), unenrollStudent)
+
+router.post("/:id/blocks", authorizeRoles("instructor", "admin"), storeAssessmentQuestionBlocks)
 
 export default router

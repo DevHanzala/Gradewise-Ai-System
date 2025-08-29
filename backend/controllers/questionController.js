@@ -7,7 +7,6 @@ import {
   reorderQuestions,
   duplicateQuestion,
   getQuestionStats,
-  searchQuestions,
   bulkCreateQuestions,
 } from "../models/questionModel.js"
 
@@ -75,31 +74,32 @@ export const getQuestionsByAssessmentHandler = async (req, res) => {
 
     // Students must be enrolled; instructors must own the assessment
     if (userRole === "instructor") {
-      const assessmentCheck = await db.query(
-        "SELECT id FROM assessments WHERE id = $1 AND instructor_id = $2",
-        [assessmentId, userId]
-      )
+      const assessmentCheck = await db.query("SELECT id FROM assessments WHERE id = $1 AND instructor_id = $2", [
+        assessmentId,
+        userId,
+      ])
       if (assessmentCheck.rows.length === 0) {
         return res.status(403).json({
           success: false,
-          message: "Access denied. You can only view questions for your own assessments."
+          message: "Access denied. You can only view questions for your own assessments.",
         })
       }
     } else if (userRole === "student") {
       const enrolledCheck = await db.query(
         "SELECT 1 FROM assessment_enrollments WHERE assessment_id = $1 AND student_id = $2",
-        [assessmentId, userId]
+        [assessmentId, userId],
       )
       if (enrolledCheck.rows.length === 0) {
         return res.status(403).json({
           success: false,
-          message: "You are not enrolled in this assessment."
+          message: "You are not enrolled in this assessment.",
         })
       }
     }
 
     // Get blocks
-    const blocksResult = await db.query(`
+    const blocksResult = await db.query(
+      `
       SELECT 
         id,
         block_title,
@@ -114,21 +114,26 @@ export const getQuestionsByAssessmentHandler = async (req, res) => {
       FROM question_blocks 
       WHERE assessment_id = $1 
       ORDER BY COALESCE(block_order, 1) ASC, created_at ASC
-    `, [assessmentId])
+    `,
+      [assessmentId],
+    )
 
     const blocks = blocksResult.rows
 
     // Attach generated questions for each block
     const blocksWithQuestions = []
     for (const block of blocks) {
-      const questionsResult = await db.query(`
+      const questionsResult = await db.query(
+        `
         SELECT id, question_order, question_text, question_type, options, correct_answer, explanation, marks
           FROM generated_questions
          WHERE block_id = $1
          ORDER BY question_order ASC, id ASC
-      `, [block.id])
+      `,
+        [block.id],
+      )
 
-      const questions = questionsResult.rows.map(q => ({
+      const questions = questionsResult.rows.map((q) => ({
         id: q.id,
         question_order: q.question_order,
         question_text: q.question_text,
@@ -136,7 +141,7 @@ export const getQuestionsByAssessmentHandler = async (req, res) => {
         options: q.options || [],
         correct_answer: q.correct_answer || null,
         explanation: q.explanation || null,
-        marks: q.marks || block.marks_per_question || 1
+        marks: q.marks || block.marks_per_question || 1,
       }))
 
       blocksWithQuestions.push({ ...block, questions })
@@ -147,25 +152,24 @@ export const getQuestionsByAssessmentHandler = async (req, res) => {
     res.status(200).json({
       success: true,
       message: "Questions retrieved successfully",
-      data: blocksWithQuestions
+      data: blocksWithQuestions,
     })
-
   } catch (error) {
     console.error("❌ Get questions by assessment error:", error)
 
-    if (error.code === '42703') {
+    if (error.code === "42703") {
       console.log("🔧 Column missing error detected. Please run the table fix script.")
       return res.status(500).json({
         success: false,
         message: "Database schema needs to be updated. Please contact administrator.",
-        error: "Missing database column. Run: node scripts/fixAllIssues.js"
+        error: "Missing database column. Run: node scripts/fixAllIssues.js",
       })
     }
 
     res.status(500).json({
       success: false,
       message: "Failed to retrieve questions",
-      error: error.message
+      error: error.message,
     })
   }
 }
@@ -688,22 +692,21 @@ export const storeQuestionBlocksHandler = async (req, res) => {
 
     // Import the storeQuestionBlocks function from assessmentModel
     const { storeQuestionBlocks } = await import("../models/assessmentModel.js")
-    
+
     // Store the question blocks
     const result = await storeQuestionBlocks(assessmentId, questions, instructorId)
 
     res.json({
       success: true,
       message: "Question blocks stored successfully",
-      data: result
+      data: result,
     })
-
   } catch (error) {
     console.error("❌ Store question blocks error:", error)
     res.status(500).json({
       success: false,
       message: "Failed to store question blocks",
-      error: error.message
+      error: error.message,
     })
   }
 }

@@ -19,6 +19,7 @@ import {
 } from "../models/assessmentModel.js"
 import { getUserByEmail } from "../models/userModel.js"
 import { sendAssessmentEnrollmentEmail } from "../services/emailService.js"
+import db from "../DB/db.js" // Declare the db variable here
 
 // Ensure tables exist on startup
 ensureAssessmentAttemptsTable().catch(console.error)
@@ -31,33 +32,33 @@ export const createNewAssessment = async (req, res) => {
   try {
     // Ensure required tables exist
     await ensureAssessmentsTable()
-    
-    const { 
-      title, 
-      description, 
-      duration, 
-      total_marks, 
-      passing_marks, 
-      instructions, 
-      is_published, 
-      start_date, 
-      end_date, 
-      question_blocks 
+
+    const {
+      title,
+      description,
+      duration,
+      total_marks,
+      passing_marks,
+      instructions,
+      is_published,
+      start_date,
+      end_date,
+      question_blocks,
     } = req.body
     const instructor_id = req.user.id
 
     // Validate required fields
     if (!title) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: "Title is required" 
+        message: "Title is required",
       })
     }
 
     if (!description) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: "Description is required" 
+        message: "Description is required",
       })
     }
 
@@ -65,11 +66,12 @@ export const createNewAssessment = async (req, res) => {
     let calculatedDuration = duration || 60
     if (question_blocks && Array.isArray(question_blocks) && question_blocks.length > 0) {
       const totalQuestions = question_blocks.reduce((total, block) => total + (block.question_count || 1), 0)
-      const averageComplexity = question_blocks.reduce((total, block) => {
-        const complexity = block.difficulty_level === 'easy' ? 1 : block.difficulty_level === 'medium' ? 1.5 : 2
-        return total + complexity
-      }, 0) / question_blocks.length
-      
+      const averageComplexity =
+        question_blocks.reduce((total, block) => {
+          const complexity = block.difficulty_level === "easy" ? 1 : block.difficulty_level === "medium" ? 1.5 : 2
+          return total + complexity
+        }, 0) / question_blocks.length
+
       // Base time: 2 minutes per question + complexity factor
       calculatedDuration = Math.ceil(totalQuestions * 2 * averageComplexity)
     }
@@ -77,7 +79,7 @@ export const createNewAssessment = async (req, res) => {
     // Create assessment data object (removed course_id concept)
     // Auto-publish assessment if it has question blocks
     const shouldAutoPublish = question_blocks && Array.isArray(question_blocks) && question_blocks.length > 0
-    
+
     const assessmentData = {
       title,
       description,
@@ -114,14 +116,14 @@ export const createNewAssessment = async (req, res) => {
     res.status(201).json({
       success: true,
       message: "Assessment created successfully",
-      data: newAssessment
+      data: newAssessment,
     })
   } catch (error) {
     console.error("❌ Create assessment error:", error)
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: "Failed to create assessment", 
-      error: error.message 
+      message: "Failed to create assessment",
+      error: error.message,
     })
   }
 }
@@ -134,7 +136,7 @@ export const getInstructorAssessments = async (req, res) => {
   try {
     // Ensure required tables exist
     await ensureAssessmentsTable()
-    
+
     const instructor_id = req.user.id
     console.log(`📋 Fetching assessments for instructor: ${instructor_id}`)
 
@@ -146,14 +148,14 @@ export const getInstructorAssessments = async (req, res) => {
     res.status(200).json({
       success: true,
       message: "Assessments retrieved successfully",
-      data: assessments || []
+      data: assessments || [],
     })
   } catch (error) {
     console.error("❌ Get instructor assessments error:", error)
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: "Failed to retrieve assessments", 
-      error: error.message 
+      message: "Failed to retrieve assessments",
+      error: error.message,
     })
   }
 }
@@ -164,7 +166,7 @@ export const getInstructorAssessments = async (req, res) => {
  */
 export const toggleAssessmentPublish = async (req, res) => {
   try {
-    const assessment_id = parseInt(req.params.id)
+    const assessment_id = Number.parseInt(req.params.id)
     const instructor_id = req.user.id
     const { is_published } = req.body
 
@@ -174,22 +176,22 @@ export const toggleAssessmentPublish = async (req, res) => {
     const assessment = await getAssessmentById(assessment_id, instructor_id, "instructor")
 
     if (!assessment) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        message: "Assessment not found or you don't have permission to access it" 
+        message: "Assessment not found or you don't have permission to access it",
       })
     }
 
     // Update publish status
     const result = await db.query(
       "UPDATE assessments SET is_published = $1, updated_at = NOW() WHERE id = $2 RETURNING *",
-      [is_published, assessment_id]
+      [is_published, assessment_id],
     )
 
     if (result.rows.length === 0) {
-      return res.status(500).json({ 
+      return res.status(500).json({
         success: false,
-        message: "Failed to update assessment publish status" 
+        message: "Failed to update assessment publish status",
       })
     }
 
@@ -197,15 +199,15 @@ export const toggleAssessmentPublish = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: `Assessment ${is_published ? 'published' : 'unpublished'} successfully`,
-      data: result.rows[0]
+      message: `Assessment ${is_published ? "published" : "unpublished"} successfully`,
+      data: result.rows[0],
     })
   } catch (error) {
     console.error("❌ Toggle assessment publish error:", error)
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: "Failed to toggle assessment publish status", 
-      error: error.message 
+      message: "Failed to toggle assessment publish status",
+      error: error.message,
     })
   }
 }
@@ -504,7 +506,11 @@ export const getAssessmentStudents = async (req, res) => {
     })
   } catch (error) {
     console.error("❌ Get assessment students error:", error)
-    res.status(500).json({ message: "Failed to retrieve enrolled students", error: error.message })
+    res.status(500).json({
+      success: false,
+      message: "Failed to retrieve enrolled students",
+      error: error.message,
+    })
   }
 }
 
@@ -552,15 +558,14 @@ export const getAvailableStudents = async (req, res) => {
     res.status(200).json({
       success: true,
       message: "Available students retrieved successfully",
-      data: availableStudents
+      data: availableStudents,
     })
-
   } catch (error) {
     console.error("❌ Get available students error:", error)
     res.status(500).json({
       success: false,
       message: "Failed to retrieve available students",
-      error: error.message
+      error: error.message,
     })
   }
 }
@@ -607,11 +612,10 @@ export const getStudentAssessmentList = async (req, res) => {
 
     console.log(`✅ Found ${assessments.length} assessments for student`)
 
-   res.status(200).json({
-  success: true,
-  data: assessments,
-})
-
+    res.status(200).json({
+      success: true,
+      data: assessments,
+    })
   } catch (error) {
     console.error("❌ Get student assessments error:", error)
     res.status(500).json({ message: "Failed to retrieve student assessments", error: error.message })
@@ -709,5 +713,54 @@ export const getStatistics = async (req, res) => {
   } catch (error) {
     console.error("❌ Get assessment statistics error:", error)
     res.status(500).json({ message: "Failed to retrieve assessment statistics", error: error.message })
+  }
+}
+
+/**
+ * Store question blocks for an assessment (called by AI generation)
+ * @route POST /api/assessments/:id/blocks
+ */
+export const storeAssessmentQuestionBlocks = async (req, res) => {
+  try {
+    const assessment_id = Number.parseInt(req.params.id)
+    const instructor_id = req.user.id
+    const { questions } = req.body
+
+    if (!questions || !Array.isArray(questions)) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid questions array is required",
+      })
+    }
+
+    console.log(`📝 Storing ${questions.length} question blocks for assessment ${assessment_id}`)
+
+    // Check if assessment exists and belongs to instructor
+    const assessment = await getAssessmentById(assessment_id, instructor_id, "instructor")
+
+    if (!assessment) {
+      return res.status(404).json({
+        success: false,
+        message: "Assessment not found or you don't have permission to access it",
+      })
+    }
+
+    // Store question blocks
+    const result = await storeQuestionBlocks(assessment_id, questions, instructor_id)
+
+    console.log("✅ Question blocks stored successfully")
+
+    res.status(200).json({
+      success: true,
+      message: "Question blocks stored successfully",
+      data: result,
+    })
+  } catch (error) {
+    console.error("❌ Store question blocks error:", error)
+    res.status(500).json({
+      success: false,
+      message: "Failed to store question blocks",
+      error: error.message,
+    })
   }
 }
