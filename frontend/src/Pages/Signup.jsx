@@ -64,17 +64,23 @@ function Signup() {
 
       // Clear form
       setFormData({ name: "", email: "", password: "" })
+
+      // Redirect to login after a short delay
+      setTimeout(() => {
+        navigate("/login")
+      }, 2000)
     } catch (error) {
+      console.error("Signup error:", error) // Log error for debugging
       if (error instanceof z.ZodError) {
-        // Handle validation errors
+        // Handle Zod validation errors
         const fieldErrors = {}
-        error.errors.forEach((err) => {
+        error.issues.forEach((err) => { // Use error.issues instead of error.errors
           fieldErrors[err.path[0]] = err.message
         })
         setErrors(fieldErrors)
       } else {
         // Handle API errors
-        const errorMessage = error.response?.data?.message || "Registration failed. Please try again."
+        const errorMessage = error.response?.data?.message || error.message || "Registration failed. Please try again."
         showModal("error", "Registration Failed", errorMessage)
       }
     } finally {

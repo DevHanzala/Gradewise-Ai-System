@@ -80,7 +80,7 @@ export const sendVerificationEmail = async (email, name, verificationToken) => {
           <p>Best regards,<br>The Gradewise AI Team</p>
         </div>
         <div class="footer">
-          <p>© 2024 Gradewise AI. All rights reserved.</p>
+          <p>© 2025 Gradewise AI. All rights reserved.</p>
         </div>
       </div>
     </body>
@@ -94,7 +94,7 @@ export const sendVerificationEmail = async (email, name, verificationToken) => {
  * Send password reset email
  */
 export const sendPasswordResetEmail = async (email, name, resetToken) => {
-  const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`
+  const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`
 
   const subject = "Reset Your Password - Gradewise AI"
   const htmlContent = `
@@ -121,10 +121,10 @@ export const sendPasswordResetEmail = async (email, name, resetToken) => {
         </div>
         <div class="content">
           <h2>Hi ${name},</h2>
-          <p>We received a request to reset your password for your Gradewise AI account. If you made this request, click the button below to reset your password:</p>
+          <p>We received a request to reset your password for your Gradewise AI account. Click the button below to set a new password:</p>
           
           <div style="text-align: center;">
-            <a href="${resetUrl}" class="button">Reset Password</a>
+            <a href="${resetUrl}" class="button">Set New Password</a>
           </div>
           
           <p>If the button doesn't work, you can also copy and paste this link into your browser:</p>
@@ -146,10 +146,12 @@ export const sendPasswordResetEmail = async (email, name, resetToken) => {
             <li>Numbers and special characters</li>
           </ul>
           
+          <p>If you need further assistance, contact support@gradewise.ai.</p>
+          
           <p>Best regards,<br>The Gradewise AI Team</p>
         </div>
         <div class="footer">
-          <p>© 2024 Gradewise AI. All rights reserved.</p>
+          <p>© 2025 Gradewise AI. All rights reserved.</p>
         </div>
       </div>
     </body>
@@ -242,7 +244,7 @@ export const sendWelcomeEmail = async (email, name, role) => {
           <p>Best regards,<br>The Gradewise AI Team</p>
         </div>
         <div class="footer">
-          <p>© 2024 Gradewise AI. All rights reserved.</p>
+          <p>© 2025 Gradewise AI. All rights reserved.</p>
         </div>
       </div>
     </body>
@@ -256,9 +258,16 @@ export const sendWelcomeEmail = async (email, name, role) => {
  * Send role change notification email
  */
 export const sendRoleChangeEmail = async (email, name, oldRole, newRole) => {
-  const dashboardUrl = `${process.env.FRONTEND_URL}/dashboard`
+  const roleToDashboardPath = {
+    student: "/student/dashboard",
+    instructor: "/instructor/dashboard",
+    admin: "/admin/dashboard",
+    super_admin: "/super-admin/dashboard",
+  };
+  const dashboardPath = roleToDashboardPath[newRole] || "/profile";
+  const dashboardUrl = `${process.env.FRONTEND_URL}${dashboardPath}`;
 
-  const subject = `Your Role Has Been Updated - Gradewise AI`
+  const subject = `Your Role Has Been Updated - Gradewise AI`;
   const htmlContent = `
     <!DOCTYPE html>
     <html>
@@ -301,15 +310,15 @@ export const sendRoleChangeEmail = async (email, name, oldRole, newRole) => {
           <p>Best regards,<br>The Gradewise AI Team</p>
         </div>
         <div class="footer">
-          <p>© 2024 Gradewise AI. All rights reserved.</p>
+          <p>© 2025 Gradewise AI. All rights reserved.</p>
         </div>
       </div>
     </body>
     </html>
-  `
+  `;
 
-  return await sendEmail(email, subject, htmlContent)
-}
+  return await sendEmail(email, subject, htmlContent);
+};
 
 /**
  * Send assessment enrollment email to students
@@ -376,7 +385,7 @@ export const sendAssessmentEnrollmentEmail = async (email, name, assessmentTitle
           <p>Best regards,<br>The Gradewise AI Team</p>
         </div>
         <div class="footer">
-          <p>© 2024 Gradewise AI. All rights reserved.</p>
+          <p>© 2025 Gradewise AI. All rights reserved.</p>
         </div>
       </div>
     </body>
@@ -451,7 +460,7 @@ export const sendAssessmentReminderEmail = async (email, name, assessmentTitle, 
           <p>Best regards,<br>The Gradewise AI Team</p>
         </div>
         <div class="footer">
-          <p>© 2024 Gradewise AI. All rights reserved.</p>
+          <p>© 2025 Gradewise AI. All rights reserved.</p>
         </div>
       </div>
     </body>

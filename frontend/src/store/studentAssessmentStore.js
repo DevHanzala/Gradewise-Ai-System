@@ -1,201 +1,123 @@
-import { create } from "zustand"
-import axios from "axios"
-import toast from "react-hot-toast"
+import { create } from "zustand";
+import axios from "axios";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api"
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 const useStudentAssessmentStore = create((set, get) => ({
-  // State
-  currentAssessment: null,
   assessmentQuestions: [],
-  currentAnswers: {},
-  flaggedQuestions: new Set(),
   timeRemaining: 0,
-  currentQuestionIndex: 0,
-  isSubmitted: false,
   loading: false,
-  submitting: false,
   error: null,
+  isSubmitted: false,
+  submission: null,
 
-  // Actions
-  setLoading: (loading) => set({ loading }),
-  setSubmitting: (submitting) => set({ submitting }),
-  setError: (error) => set({ error }),
-  clearError: () => set({ error: null }),
-
-  // Start Assessment
+  // Start assessment
   startAssessment: async (assessmentId) => {
+    set({ loading: true, error: null });
     try {
-      set({ loading: true, error: null })
-
-      const token = localStorage.getItem("token")
-      const response = await axios.post(
-        `${API_URL}/assessments/${assessmentId}/start`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
-
+      const token = localStorage.getItem("token");
+      const response = await axios.get(`${API_URL}/taking/assessments/${assessmentId}/start`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (response.data.success) {
-        const { assessment, questions } = response.data.data
-
         set({
-          currentAssessment: assessment,
-          assessmentQuestions: questions,
-          timeRemaining: assessment.duration * 60, // Convert to seconds
-          currentAnswers: {},
-          flaggedQuestions: new Set(),
-          currentQuestionIndex: 0,
+          assessmentQuestions: response.data.data.questions,
+          timeRemaining: response.data.data.duration * 60,
           isSubmitted: false,
           loading: false,
-        })
-
-        return { assessment, questions }
+        });
+      } else {
+        set({ error: response.data.message, loading: false });
       }
     } catch (error) {
-      const errorMessage = error.response?.data?.message || "Failed to start assessment"
-      set({ error: errorMessage, loading: false })
-      toast.error(errorMessage)
-      throw error
+      set({ error: error.response?.data?.message || "Failed to start assessment", loading: false });
     }
   },
 
-  // Save Progress
-  saveProgress: async (assessmentId) => {
-    try {
-      const { currentAnswers, flaggedQuestions } = get()
-      const token = localStorage.getItem("token")
-
-      await axios.post(
-        `${API_URL}/assessments/student/${assessmentId}/progress`,
-        {
-          answers: currentAnswers,
-          flagged_questions: Array.from(flaggedQuestions),
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      )
-    } catch (error) {
-      console.error("Failed to save progress:", error)
-    }
-  },
-
-  // Submit Assessment
-  submitAssessment: async (assessmentId) => {
-    try {
-      set({ submitting: true, error: null })
-
-      const { currentAnswers, flaggedQuestions } = get()
-      const token = localStorage.getItem("token")
-
-      const response = await axios.post(
-        `${API_URL}/assessments/student/${assessmentId}/submit`,
-        {
-          answers: currentAnswers,
-          flagged_questions: Array.from(flaggedQuestions),
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      )
-
-      if (response.data.success) {
-        set({
-          isSubmitted: true,
-          submitting: false,
-        })
-
-        toast.success("Assessment submitted successfully!")
-        return response.data.data
-      }
-    } catch (error) {
-      const errorMessage = error.response?.data?.message || "Failed to submit assessment"
-      set({ error: errorMessage, submitting: false })
-      toast.error(errorMessage)
-      throw error
-    }
-  },
-
-  // Update Answer
+  // Update answer
   updateAnswer: (questionId, answer) => {
     set((state) => ({
-      currentAnswers: {
-        ...state.currentAnswers,
-        [questionId]: answer,
-      },
-    }))
-
-    // Auto-save progress
-    const { currentAssessment } = get()
-    if (currentAssessment) {
-      get().saveProgress(currentAssessment.id)
-    }
+      assessmentQuestions: state.assessmentQuestions.map((q) =>
+        q.id === questionId ? { ...q, answer } : q
+      ),
+    }));
   },
 
-  // Toggle Flag Question
-  toggleFlagQuestion: (questionId) => {
-    set((state) => {
-      const newFlagged = new Set(state.flaggedQuestions)
-      if (newFlagged.has(questionId)) {
-        newFlagged.delete(questionId)
+  // Submit assessment
+  submitAssessment: async (assessmentId) => {
+    set({ loading: true, error: null });
+    try {
+      const token = localStorage.getItem("token");
+      const answers = get().assessmentQuestions.map((q) => ({
+        questionId: q.id,
+        answer: q.answer || null,
+      }));
+      const response = await axios.post(
+        `${API_URL}/taking/assessments/${assessmentId}/submit`,
+        { answers },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (response.data.success) {
+        set({ isSubmitted: true, loading: false });
       } else {
-        newFlagged.add(questionId)
+        set({ error: response.data.message, loading: false });
       }
-      return { flaggedQuestions: newFlagged }
-    })
-
-    // Auto-save progress
-    const { currentAssessment } = get()
-    if (currentAssessment) {
-      get().saveProgress(currentAssessment.id)
+    } catch (error) {
+      set({ error: error.response?.data?.message || "Failed to submit assessment", loading: false });
     }
   },
 
-  // Navigate Questions
-  setCurrentQuestionIndex: (index) => set({ currentQuestionIndex: index }),
-
-  nextQuestion: () => {
-    set((state) => ({
-      currentQuestionIndex: Math.min(state.currentQuestionIndex + 1, state.assessmentQuestions.length - 1),
-    }))
+  // Print assessment with keys
+  printPaper: async (assessmentId) => {
+    set({ loading: true, error: null });
+    try {
+      const token = localStorage.getItem("token");
+      const response = await axios.get(`${API_URL}/taking/assessments/${assessmentId}/print`, {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: "blob",
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `assessment_${assessmentId}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      set({ loading: false });
+    } catch (error) {
+      set({ error: error.response?.data?.message || "Failed to print assessment", loading: false });
+    }
   },
 
-  previousQuestion: () => {
-    set((state) => ({
-      currentQuestionIndex: Math.max(state.currentQuestionIndex - 1, 0),
-    }))
-  },
-
-  // Timer Management
-  setTimeRemaining: (time) => set({ timeRemaining: time }),
-
+  // Decrement timer
   decrementTime: () => {
-    set((state) => {
-      const newTime = Math.max(state.timeRemaining - 1, 0)
-
-      // Auto-submit when time runs out
-      if (newTime === 0 && !state.isSubmitted && state.currentAssessment) {
-        get().submitAssessment(state.currentAssessment.id)
-      }
-
-      return { timeRemaining: newTime }
-    })
+    set((state) => ({
+      timeRemaining: state.timeRemaining > 0 ? state.timeRemaining - 1 : 0,
+    }));
   },
 
-  // Clear Assessment Data
-  clearAssessmentData: () =>
-    set({
-      currentAssessment: null,
-      assessmentQuestions: [],
-      currentAnswers: {},
-      flaggedQuestions: new Set(),
-      timeRemaining: 0,
-      currentQuestionIndex: 0,
-      isSubmitted: false,
-      loading: false,
-      submitting: false,
-      error: null,
-    }),
-}))
+  // Fetch submission details
+  getSubmissionDetails: async (submissionId) => {
+    set({ loading: true, error: null, submission: null });
+    try {
+      const token = localStorage.getItem("token");
+      const response = await axios.get(`${API_URL}/taking/submissions/${submissionId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.data.success) {
+        set({ submission: response.data.data, loading: false });
+      } else {
+        set({ error: response.data.message, loading: false });
+      }
+    } catch (error) {
+      set({ error: error.response?.data?.message || "Failed to load submission details", loading: false });
+    }
+  },
 
-export default useStudentAssessmentStore
+  // Clear error
+  clearError: () => {
+    set({ error: null });
+  },
+}));
+
+export default useStudentAssessmentStore;

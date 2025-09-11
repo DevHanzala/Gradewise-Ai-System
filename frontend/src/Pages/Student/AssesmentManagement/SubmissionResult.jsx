@@ -1,77 +1,73 @@
-import { useState, useEffect } from "react"
-import { useParams, useNavigate } from "react-router-dom"
-import { toast } from "react-hot-toast"
-import { CheckCircle, XCircle, Clock, Award, FileText, ArrowLeft } from "lucide-react"
-import Navbar from "../../components/Navbar"
-import LoadingSpinner from "../../components/ui/LoadingSpinner"
+import { useState, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { toast } from "react-hot-toast";
+import { CheckCircle, XCircle, Clock, Award, FileText, ArrowLeft } from "lucide-react";
+import useStudentAssessmentStore from "../../../store/studentAssessmentStore.js";
+import Navbar from "../../../components/Navbar";
+import Footer from "../../../components/Footer";
+import LoadingSpinner from "../../../components/ui/LoadingSpinner";
+import Modal from "../../../components/ui/Modal";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api"
+function SubmissionResult() {
+  const { submissionId } = useParams();
+  const navigate = useNavigate();
+  const { submission, loading, error, getSubmissionDetails, clearError } = useStudentAssessmentStore();
+  const [showAnswers, setShowAnswers] = useState(false);
+  const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" });
 
-const SubmissionResult = () => {
-  const { submissionId } = useParams()
-  const navigate = useNavigate()
-
-  const [loading, setLoading] = useState(true)
-  const [submission, setSubmission] = useState(null)
-  const [showAnswers, setShowAnswers] = useState(false)
-
+  // Load submission details on mount
   useEffect(() => {
-    loadSubmissionDetails()
-  }, [submissionId])
+    getSubmissionDetails(submissionId);
+  }, [submissionId, getSubmissionDetails]);
 
-  const loadSubmissionDetails = async () => {
-    try {
-      setLoading(true)
-      const token = localStorage.getItem("token")
-
-      const response = await fetch(`${API_URL}/taking/submissions/${submissionId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-
-      const data = await response.json()
-
-      if (data.success) {
-        setSubmission(data.data)
-      } else {
-        toast.error(data.message)
-        navigate("/student/dashboard")
-      }
-    } catch (error) {
-      console.error("Error loading submission:", error)
-      toast.error("Failed to load submission details")
-      navigate("/student/dashboard")
-    } finally {
-      setLoading(false)
+  // Handle errors
+  useEffect(() => {
+    if (error) {
+      setModal({
+        isOpen: true,
+        type: "error",
+        title: "Error",
+        message: error || "Failed to load submission details",
+      });
+      clearError();
+      setTimeout(() => navigate("/student/dashboard"), 2000);
     }
-  }
+  }, [error, clearError, navigate]);
 
+  // Grade color logic
   const getGradeColor = (percentage) => {
-    if (percentage >= 90) return "text-green-600"
-    if (percentage >= 80) return "text-blue-600"
-    if (percentage >= 70) return "text-yellow-600"
-    if (percentage >= 60) return "text-orange-600"
-    return "text-red-600"
-  }
+    if (percentage >= 90) return "text-green-600";
+    if (percentage >= 80) return "text-blue-600";
+    if (percentage >= 70) return "text-yellow-600";
+    if (percentage >= 60) return "text-orange-600";
+    return "text-red-600";
+  };
 
+  // Grade letter logic
   const getGradeLetter = (percentage) => {
-    if (percentage >= 90) return "A"
-    if (percentage >= 80) return "B"
-    if (percentage >= 70) return "C"
-    if (percentage >= 60) return "D"
-    return "F"
-  }
+    if (percentage >= 90) return "A";
+    if (percentage >= 80) return "B";
+    if (percentage >= 70) return "C";
+    if (percentage >= 60) return "D";
+    return "F";
+  };
 
+  // Format duration
   const formatDuration = (minutes) => {
-    const hours = Math.floor(minutes / 60)
-    const mins = minutes % 60
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
     if (hours > 0) {
-      return `${hours}h ${mins}m`
+      return `${hours}h ${mins}m`;
     }
-    return `${mins}m`
-  }
+    return `${mins}m`;
+  };
 
+  // Show modal
+  const showModal = (type, title, message) => {
+    setModal({ isOpen: true, type, title, message });
+  };
+
+  // Loading state
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -79,10 +75,12 @@ const SubmissionResult = () => {
         <div className="flex items-center justify-center h-96">
           <LoadingSpinner />
         </div>
+        <Footer />
       </div>
-    )
+    );
   }
 
+  // Submission not found
   if (!submission) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -98,14 +96,14 @@ const SubmissionResult = () => {
             </button>
           </div>
         </div>
+        <Footer />
       </div>
-    )
+    );
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
-
       <div className="container mx-auto px-4 py-8">
         {/* Header */}
         <div className="mb-8">
@@ -134,7 +132,6 @@ const SubmissionResult = () => {
               </div>
             </div>
           </div>
-
           <div className="bg-white rounded-lg shadow-sm p-6">
             <div className="flex items-center space-x-3">
               <CheckCircle className="h-8 w-8 text-green-500" />
@@ -149,7 +146,6 @@ const SubmissionResult = () => {
               </div>
             </div>
           </div>
-
           <div className="bg-white rounded-lg shadow-sm p-6">
             <div className="flex items-center space-x-3">
               <FileText className="h-8 w-8 text-blue-500" />
@@ -162,7 +158,6 @@ const SubmissionResult = () => {
               </div>
             </div>
           </div>
-
           <div className="bg-white rounded-lg shadow-sm p-6">
             <div className="flex items-center space-x-3">
               <Clock className="h-8 w-8 text-purple-500" />
@@ -191,15 +186,13 @@ const SubmissionResult = () => {
               </div>
             </div>
           )}
-
           <div className="bg-green-50 border border-green-200 rounded-lg p-4">
             <div className="flex items-start space-x-3">
               <CheckCircle className="h-5 w-5 text-green-500 mt-0.5" />
               <div>
                 <h3 className="font-medium text-green-800">Assessment Completed</h3>
                 <p className="text-green-700 text-sm mt-1">
-                  Your assessment has been successfully submitted on{" "}
-                  {new Date(submission.submitted_at).toLocaleString()}.
+                  Your assessment was submitted on {new Date(submission.submitted_at).toLocaleString()}.
                 </p>
               </div>
             </div>
@@ -219,7 +212,6 @@ const SubmissionResult = () => {
               </button>
             </div>
           </div>
-
           {showAnswers && (
             <div className="p-6">
               <div className="space-y-8">
@@ -246,15 +238,12 @@ const SubmissionResult = () => {
                         )}
                       </div>
                     </div>
-
-                    {/* Multiple Choice Options */}
                     {question.type === "multiple_choice" && question.options && (
                       <div className="space-y-2 mb-4">
                         {question.options.map((option, optionIndex) => {
-                          const optionValue = option.charAt(0)
-                          const isCorrect = optionValue === question.correct_answer
-                          const isSelected = optionValue === question.student_answer
-
+                          const optionValue = option.charAt(0);
+                          const isCorrect = optionValue === question.correct_answer;
+                          const isSelected = optionValue === question.student_answer;
                           return (
                             <div
                               key={optionIndex}
@@ -287,12 +276,10 @@ const SubmissionResult = () => {
                                 </div>
                               </div>
                             </div>
-                          )
+                          );
                         })}
                       </div>
                     )}
-
-                    {/* Text Answer */}
                     {question.type !== "multiple_choice" && (
                       <div className="mb-4">
                         <p className="text-sm font-medium text-gray-700 mb-2">Your Answer:</p>
@@ -305,8 +292,6 @@ const SubmissionResult = () => {
                         </div>
                       </div>
                     )}
-
-                    {/* Explanation */}
                     {question.explanation && (
                       <div className="bg-blue-50 p-4 rounded-lg">
                         <p className="text-sm font-medium text-blue-800 mb-2">Explanation:</p>
@@ -320,8 +305,17 @@ const SubmissionResult = () => {
           )}
         </div>
       </div>
+      <Footer />
+      <Modal
+        isOpen={modal.isOpen}
+        onClose={() => setModal({ ...modal, isOpen: false })}
+        type={modal.type}
+        title={modal.title}
+      >
+        {modal.message}
+      </Modal>
     </div>
-  )
+  );
 }
 
-export default SubmissionResult
+export default SubmissionResult;

@@ -1,362 +1,334 @@
+import fs from "fs/promises";
 import {
   createResource,
   findResourcesByUploader,
   findResourceById,
   updateResource,
   deleteResource,
-  getPublicResources,
   linkResourceToAssessment,
   getAssessmentResources,
   unlinkResourceFromAssessment,
-} from "../models/resourceModel.js"
-import { getAssessmentById as findAssessmentById } from "../models/assessmentModel.js"
+} from "../models/resourceModel.js";
+import { getAssessmentById, storeResourceChunk } from "../models/assessmentModel.js";
+import { extractTextFromFile, chunkText } from "../services/textProcessor.js";
+import { generateEmbedding } from "../services/embeddingGenerator.js";
 
-import fs from "fs"
-import path from "path"
-
-/**
- * Uploads a new resource (file or link).
- * @param {Object} req - The Express request object.
- * @param {Object} res - The Express response object.
- */
 export const uploadResource = async (req, res) => {
-  const { name, url, visibility } = req.body
-  const uploadedBy = req.user.id
-  const file = req.file
+  const { name, url, visibility } = req.body;
+  const uploadedBy = req.user.id;
+  const files = req.files || [];
 
   try {
-    console.log(`🔄 Uploading resource by user ${uploadedBy}`)
+    console.log(`🔄 Uploading resources by user ${uploadedBy}`);
 
-    let resourceData = {
-      uploadedBy,
-      visibility: visibility || 'private'
+    const uploadedResources = [];
+
+    // Handle files
+    for (const file of files) {
+      let resourceData = {
+        name: name || file.originalname,
+        file_path: file.path,
+        file_type: file.mimetype,
+        file_size: file.size,
+        content_type: "file",
+        visibility: visibility || "private",
+        uploaded_by: uploadedBy,
+      };
+
+      const newResource = await createResource(resourceData);
+
+      // Extract text, chunk, and generate embeddings
+      const text = await extractTextFromFile(file.path, file.mimetype);
+      const chunks = chunkText(text, 500);
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        const embedding = await generateEmbedding(chunk);
+        await storeResourceChunk(newResource.id, chunk, embedding, { chunk_index: i });
+      }
+
+      uploadedResources.push(newResource);
     }
 
-    if (file) {
-      // File upload
-      resourceData = {
-        ...resourceData,
-        name: name || file.originalname,
-        filePath: file.path,
-        fileType: file.mimetype,
-        fileSize: file.size,
-        contentType: 'file'
-      }
-    } else if (url) {
-      // Link upload
+    // Handle URL if provided
+    if (url) {
       if (!name) {
-        return res.status(400).json({ message: "Name is required for link resources." })
+        return res.status(400).json({ success: false, message: "Name is required for link resources." });
       }
-      
-      resourceData = {
-        ...resourceData,
+
+      const resourceData = {
         name,
         url,
-        contentType: 'link'
+        content_type: "link",
+        visibility: visibility || "private",
+        uploaded_by: uploadedBy,
+      };
+
+      const newResource = await createResource(resourceData);
+      uploadedResources.push(newResource);
+    }
+
+    if (uploadedResources.length === 0) {
+      return res.status(400).json({ success: false, message: "No files or URL provided." });
+    }
+
+    console.log(`✅ ${uploadedResources.length} resources uploaded successfully`);
+
+    res.status(201).json({
+      success: true,
+      message: "Resources uploaded successfully.",
+      resources: uploadedResources,
+    });
+  } catch (error) {
+    console.error("❌ Upload resource error:", error);
+
+    // Clean up uploaded files on error
+    for (const file of files) {
+      if (file.path) {
+        await fs.unlink(file.path).catch(err => console.error("❌ Error deleting file:", err));
       }
-    } else {
-      return res.status(400).json({ message: "Either file or URL is required." })
     }
 
-    const newResource = await createResource(resourceData)
-    console.log(`✅ Resource uploaded successfully:`, newResource)
-
-    res.status(201).json({
-      message: "Resource uploaded successfully.",
-      resource: newResource,
-    })
-  } catch (error) {
-    console.error("❌ Upload resource error:", error)
-    
-    // Clean up uploaded file if there was an error
-    if (file && fs.existsSync(file.path)) {
-      fs.unlinkSync(file.path)
-    }
-    
-    res.status(500).json({ message: "Server error while uploading resource." })
+    res.status(500).json({
+      success: false,
+      message: "Server error while uploading resources.",
+      error: error.message,
+    });
   }
-}
+};
 
-/**
- * Gets resources uploaded by the authenticated instructor.
- * @param {Object} req - The Express request object.
- * @param {Object} res - The Express response object.
- */
 export const getInstructorResources = async (req, res) => {
-  const uploadedBy = req.user.id
-  const { visibility } = req.query
-
   try {
-    console.log(`🔄 Fetching resources for instructor ${uploadedBy}`)
+    const uploadedBy = req.user.id;
+    const visibility = req.query.visibility || null;
 
-    const resources = await findResourcesByUploader(uploadedBy, visibility)
-    console.log(`✅ Found ${resources.length} resources for instructor`)
+    console.log(`🔄 Fetching resources for instructor ${uploadedBy}`);
+
+    const resources = await findResourcesByUploader(uploadedBy, visibility);
 
     res.status(200).json({
-      resources,
-    })
+      success: true,
+      message: "Resources retrieved successfully",
+      data: resources || [],
+    });
   } catch (error) {
-    console.error("❌ Get instructor resources error:", error)
-    res.status(500).json({ message: "Server error while fetching resources." })
+    console.error("❌ Get instructor resources error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to retrieve resources",
+      error: error.message,
+    });
   }
-}
+};
 
-/**
- * Gets a specific resource by ID.
- * @param {Object} req - The Express request object.
- * @param {Object} res - The Express response object.
- */
 export const getResourceById = async (req, res) => {
-  const { resourceId } = req.params
-  const userId = req.user.id
-  const userRole = req.user.role
-
   try {
-    console.log(`🔄 Fetching resource ${resourceId} for user ${userId}`)
+    const resourceId = req.params.resourceId;
+    const userId = req.user.id;
+    const userRole = req.user.role;
 
-    const resource = await findResourceById(resourceId)
+    console.log(`🔄 Fetching resource ${resourceId} for user ${userId} (${userRole})`);
+
+    const resource = await findResourceById(resourceId);
+
     if (!resource) {
-      return res.status(404).json({ message: "Resource not found." })
+      return res.status(404).json({ success: false, message: "Resource not found" });
     }
 
-    // Authorization check
-    if (userRole === "instructor" && resource.uploaded_by !== userId) {
-      return res.status(403).json({ message: "You can only view your own resources." })
+    // Check permissions
+    if (userRole === "instructor" && resource.uploaded_by !== Number.parseInt(userId)) {
+      return res.status(403).json({ success: false, message: "Access denied" });
     }
-
-    console.log(`✅ Resource found:`, resource)
 
     res.status(200).json({
-      resource,
-    })
+      success: true,
+      message: "Resource retrieved successfully",
+      data: resource,
+    });
   } catch (error) {
-    console.error("❌ Get resource by ID error:", error)
-    res.status(500).json({ message: "Server error while fetching resource." })
+    console.error("❌ Get resource error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to retrieve resource",
+      error: error.message,
+    });
   }
-}
+};
 
-/**
- * Updates a resource.
- * @param {Object} req - The Express request object.
- * @param {Object} res - The Express response object.
- */
 export const updateResourceController = async (req, res) => {
-  const { resourceId } = req.params
-  const updateData = req.body
-  const userId = req.user.id
-  const userRole = req.user.role
-
   try {
-    console.log(`🔄 Updating resource ${resourceId} by user ${userId}`)
+    const resourceId = req.params.resourceId;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    const { name, visibility } = req.body;
 
-    // Check if resource exists and belongs to the user (for instructors)
-    const resource = await findResourceById(resourceId)
+    console.log(`🔄 Updating resource ${resourceId} by user ${userId} (${userRole})`);
+
+    const resource = await findResourceById(resourceId);
+
     if (!resource) {
-      return res.status(404).json({ message: "Resource not found." })
+      return res.status(404).json({ success: false, message: "Resource not found" });
     }
 
-    if (userRole === "instructor" && resource.uploaded_by !== userId) {
-      return res.status(403).json({ message: "You can only update your own resources." })
+    if (userRole === "instructor" && resource.uploaded_by !== Number.parseInt(userId)) {
+      return res.status(403).json({ success: false, message: "Access denied" });
     }
 
-    // Update the resource
-    const updatedResource = await updateResource(resourceId, updateData)
-    console.log(`✅ Resource updated successfully:`, updatedResource)
+    const updateData = { name, visibility };
+    const updatedResource = await updateResource(resourceId, updateData);
 
     res.status(200).json({
-      message: "Resource updated successfully.",
-      resource: updatedResource,
-    })
+      success: true,
+      message: "Resource updated successfully",
+      data: updatedResource,
+    });
   } catch (error) {
-    console.error("❌ Update resource error:", error)
-    res.status(500).json({ message: "Server error while updating resource." })
+    console.error("❌ Update resource error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update resource",
+      error: error.message,
+    });
   }
-}
+};
 
-/**
- * Deletes a resource.
- * @param {Object} req - The Express request object.
- * @param {Object} res - The Express response object.
- */
 export const deleteResourceController = async (req, res) => {
-  const { resourceId } = req.params
-  const userId = req.user.id
-  const userRole = req.user.role
-
   try {
-    console.log(`🔄 Deleting resource ${resourceId} by user ${userId}`)
+    const resourceId = req.params.resourceId;
+    const userId = req.user.id;
+    const userRole = req.user.role;
 
-    // Check if resource exists and belongs to the user (for instructors)
-    const resource = await findResourceById(resourceId)
+    console.log(`🔄 Deleting resource ${resourceId} by user ${userId} (${userRole})`);
+
+    const resource = await findResourceById(resourceId);
+
     if (!resource) {
-      return res.status(404).json({ message: "Resource not found." })
+      return res.status(404).json({ success: false, message: "Resource not found" });
     }
 
-    if (userRole === "instructor" && resource.uploaded_by !== userId) {
-      return res.status(403).json({ message: "You can only delete your own resources." })
+    if (userRole === "instructor" && resource.uploaded_by !== Number.parseInt(userId)) {
+      return res.status(403).json({ success: false, message: "Access denied" });
     }
 
-    // Delete the resource
-    const deletedResource = await deleteResource(resourceId)
-    
-    // Delete the physical file if it exists
-    if (deletedResource.file_path && fs.existsSync(deletedResource.file_path)) {
-      fs.unlinkSync(deletedResource.file_path)
-    }
-    
-    console.log(`✅ Resource deleted successfully:`, deletedResource)
+    await deleteResource(resourceId);
 
     res.status(200).json({
-      message: "Resource deleted successfully.",
-      resource: deletedResource,
-    })
+      success: true,
+      message: "Resource deleted successfully",
+    });
   } catch (error) {
-    console.error("❌ Delete resource error:", error)
-    res.status(500).json({ message: "Server error while deleting resource." })
+    console.error("❌ Delete resource error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete resource",
+      error: error.message,
+    });
   }
-}
+};
 
-/**
- * Gets all public resources.
- * @param {Object} req - The Express request object.
- * @param {Object} res - The Express response object.
- */
-export const getPublicResourcesController = async (req, res) => {
-  try {
-    console.log(`🔄 Fetching public resources`)
-
-    const resources = await getPublicResources()
-    console.log(`✅ Found ${resources.length} public resources`)
-
-    res.status(200).json({
-      resources,
-    })
-  } catch (error) {
-    console.error("❌ Get public resources error:", error)
-    res.status(500).json({ message: "Server error while fetching public resources." })
-  }
-}
-
-/**
- * Links a resource to an assessment.
- * @param {Object} req - The Express request object.
- * @param {Object} res - The Express response object.
- */
 export const linkResourceToAssessmentController = async (req, res) => {
-  const { resourceId, assessmentId } = req.params
-  const userId = req.user.id
-  const userRole = req.user.role
-
   try {
-    console.log(`🔄 Linking resource ${resourceId} to assessment ${assessmentId}`)
+    const { resourceId, assessmentId } = req.params;
+    const userId = req.user.id;
+    const userRole = req.user.role;
 
-    // Check if assessment exists
-    const assessment = await findAssessmentById(assessmentId)
+    console.log(`🔄 Linking resource ${resourceId} to assessment ${assessmentId} by user ${userId} (${userRole})`);
+
+    const assessment = await getAssessmentById(assessmentId, userId, userRole);
+
     if (!assessment) {
-      return res.status(404).json({ message: "Assessment not found." })
+      return res.status(404).json({ success: false, message: "Assessment not found or access denied" });
     }
 
-    // Authorization check
-    if (userRole === "instructor" && assessment.created_by !== userId) {
-      return res.status(403).json({ message: "You can only link resources to your own assessments." })
-    }
+    const resource = await findResourceById(resourceId);
 
-    // Check if resource exists
-    const resource = await findResourceById(resourceId)
     if (!resource) {
-      return res.status(404).json({ message: "Resource not found." })
+      return res.status(404).json({ success: false, message: "Resource not found" });
     }
 
-    // Link the resource to the assessment
-    const link = await linkResourceToAssessment(assessmentId, resourceId)
-    console.log(`✅ Resource linked successfully:`, link)
+    const link = await linkResourceToAssessment(assessmentId, resourceId);
 
-    res.status(201).json({
-      message: "Resource linked to assessment successfully.",
-      link,
-    })
+    res.status(200).json({
+      success: true,
+      message: "Resource linked to assessment successfully",
+      data: link,
+    });
   } catch (error) {
-    console.error("❌ Link resource error:", error)
-    res.status(500).json({ message: "Server error while linking resource." })
+    console.error("❌ Link resource error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to link resource",
+      error: error.message,
+    });
   }
-}
+};
 
-/**
- * Gets resources linked to an assessment.
- * @param {Object} req - The Express request object.
- * @param {Object} res - The Express response object.
- */
 export const getAssessmentResourcesController = async (req, res) => {
-  const { assessmentId } = req.params
-  const userId = req.user.id
-  const userRole = req.user.role
-
   try {
-    console.log(`🔄 Fetching resources for assessment ${assessmentId}`)
+    const assessmentId = req.params.assessmentId;
+    const userId = req.user.id;
+    const userRole = req.user.role;
 
-    // Check if assessment exists
-    const assessment = await findAssessmentById(assessmentId)
+    console.log(`🔄 Fetching resources for assessment ${assessmentId} by user ${userId} (${userRole})`);
+
+    const assessment = await getAssessmentById(assessmentId, userId, userRole);
+
     if (!assessment) {
-      return res.status(404).json({ message: "Assessment not found." })
+      return res.status(404).json({ success: false, message: "Assessment not found or access denied" });
     }
 
-    // Authorization check
-    if (userRole === "instructor" && assessment.created_by !== userId) {
-      return res.status(403).json({ message: "You can only view resources for your own assessments." })
-    }
-
-    // Get linked resources
-    const resources = await getAssessmentResources(assessmentId)
-    console.log(`✅ Found ${resources.length} linked resources`)
+    const resources = await getAssessmentResources(assessmentId);
 
     res.status(200).json({
-      resources,
-      assessment: {
-        id: assessment.id,
-        name: assessment.name,
-        creator_name: assessment.creator_name,
-      },
-    })
+      success: true,
+      message: "Resources retrieved successfully",
+      data: resources || [],
+    });
   } catch (error) {
-    console.error("❌ Get assessment resources error:", error)
-    res.status(500).json({ message: "Server error while fetching assessment resources." })
+    console.error("❌ Get assessment resources error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to retrieve assessment resources",
+      error: error.message,
+    });
   }
-}
+};
 
-/**
- * Unlinks a resource from an assessment.
- * @param {Object} req - The Express request object.
- * @param {Object} res - The Express response object.
- */
 export const unlinkResourceFromAssessmentController = async (req, res) => {
-  const { resourceId, assessmentId } = req.params
-  const userId = req.user.id
-  const userRole = req.user.role
-
   try {
-    console.log(`🔄 Unlinking resource ${resourceId} from assessment ${assessmentId}`)
+    const { resourceId, assessmentId } = req.params;
+    const userId = req.user.id;
+    const userRole = req.user.role;
 
-    // Check if assessment exists
-    const assessment = await findAssessmentById(assessmentId)
+    console.log(`🔄 Unlinking resource ${resourceId} from assessment ${assessmentId} by user ${userId} (${userRole})`);
+
+    const assessment = await getAssessmentById(assessmentId, userId, userRole);
+
     if (!assessment) {
-      return res.status(404).json({ message: "Assessment not found." })
+      return res.status(404).json({ success: false, message: "Assessment not found or access denied" });
     }
 
-    // Authorization check
-    if (userRole === "instructor" && assessment.created_by !== userId) {
-      return res.status(403).json({ message: "You can only manage resources for your own assessments." })
+    const resource = await findResourceById(resourceId);
+
+    if (!resource) {
+      return res.status(404).json({ success: false, message: "Resource not found" });
     }
 
-    // Unlink the resource from the assessment
-    const unlink = await unlinkResourceFromAssessment(assessmentId, resourceId)
-    console.log(`✅ Resource unlinked successfully:`, unlink)
+    const result = await unlinkResourceFromAssessment(assessmentId, resourceId);
+
+    if (!result) {
+      return res.status(404).json({ success: false, message: "Resource not linked to this assessment" });
+    }
 
     res.status(200).json({
-      message: "Resource unlinked from assessment successfully.",
-      unlink,
-    })
+      success: true,
+      message: "Resource unlinked successfully",
+    });
   } catch (error) {
-    console.error("❌ Unlink resource error:", error)
-    res.status(500).json({ message: "Server error while unlinking resource." })
+    console.error("❌ Unlink resource error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to unlink resource",
+      error: error.message,
+    });
   }
-}
+};

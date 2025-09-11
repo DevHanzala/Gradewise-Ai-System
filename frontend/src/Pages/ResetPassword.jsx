@@ -1,76 +1,70 @@
-import { useState } from "react"
-import { Link, useParams, useNavigate } from "react-router-dom"
-import { z } from "zod"
-import useAuthStore from "../store/authStore.js"
-import { Card, CardContent } from "../components/ui/Card.jsx"
-import LoadingSpinner from "../components/ui/LoadingSpinner.jsx"
-import Modal from "../components/ui/Modal.jsx"
-
-const resetPasswordSchema = z
-  .object({
-    password: z.string().min(6, "Password must be at least 6 characters long"),
-    confirmPassword: z.string(),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: "Passwords do not match",
-    path: ["confirmPassword"],
-  })
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import useAuthStore from "../store/authStore.js";
+import { Card, CardContent } from "../components/ui/Card.jsx";
+import LoadingSpinner from "../components/ui/LoadingSpinner.jsx";
+import Modal from "../components/ui/Modal.jsx";
 
 function ResetPassword() {
-  const { token } = useParams()
-  const navigate = useNavigate()
-  const resetPassword = useAuthStore((state) => state.resetPassword)
+  const navigate = useNavigate();
+  const forgotPassword = useAuthStore((state) => state.forgotPassword);
 
   const [formData, setFormData] = useState({
-    password: "",
-    confirmPassword: "",
-  })
-  const [errors, setErrors] = useState({})
-  const [loading, setLoading] = useState(false)
-  const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" })
+    email: "",
+  });
+  const [errors, setErrors] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" });
 
   const showModal = (type, title, message) => {
-    setModal({ isOpen: true, type, title, message })
-  }
+    setModal({ isOpen: true, type, title, message });
+  };
 
   const handleChange = (e) => {
-    const { name, value } = e.target
-    setFormData({ ...formData, [name]: value })
+    const { name, value } = e.target;
+    setFormData({ ...formData, [name]: value });
     if (errors[name]) {
-      setErrors((prevErrors) => ({ ...prevErrors, [name]: undefined }))
+      setErrors((prevErrors) => ({ ...prevErrors, [name]: undefined }));
     }
-  }
+  };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    setLoading(true)
+  const validateForm = () => {
+    const newErrors = {};
+    if (!formData.email) {
+      newErrors.email = "Email is required";
+    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+      newErrors.email = "Please enter a valid email address";
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleForgotSubmit = async (e) => {
+    e.preventDefault();
+    if (!validateForm()) return;
+
+    setLoading(true);
 
     try {
-      resetPasswordSchema.parse(formData)
-      setErrors({})
-
-      const response = await resetPassword(token, { password: formData.password })
-      showModal("success", "Password Reset Successful", response.message)
-
-      setTimeout(() => {
-        navigate("/login")
-      }, 2000)
+      console.log("Sending forgot password request for:", formData.email);
+      await forgotPassword({ email: formData.email });
+      showModal(
+        "success",
+        "Reset Link Sent",
+        "If an account with that email exists, a password reset link has been sent. Please check your inbox and spam/junk folder. The link will take you to a page to set a new password."
+      );
+      setTimeout(() => navigate("/login"), 5000); // Redirect to login after 5 seconds
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        const newErrors = {}
-        for (const issue of error.issues) {
-          newErrors[issue.path[0]] = issue.message
-        }
-        setErrors(newErrors)
-      } else if (error.response) {
-        showModal("error", "Reset Failed", error.response.data.message || "Failed to reset password.")
-      } else {
-        showModal("error", "Connection Error", "An unexpected error occurred. Please check your network connection.")
-      }
+      console.error("Forgot password error:", error);
+      showModal(
+        "error",
+        "Request Failed",
+        error.response?.data?.message || "Failed to send reset link. Please try again or contact support@gradewise.ai."
+      );
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center p-4">
@@ -78,47 +72,28 @@ function ResetPassword() {
         <CardContent>
           <div className="text-center mb-8">
             <div className="text-4xl mb-4">🔒</div>
-            <h2 className="text-3xl font-bold text-gray-900 mb-2">Reset Password</h2>
-            <p className="text-gray-600">Enter your new password below</p>
+            <h2 className="text-3xl font-bold text-gray-900 mb-2">Forgot Password</h2>
+            <p className="text-gray-600">Enter your email to receive a password reset link</p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleForgotSubmit} className="space-y-6">
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-                New Password
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+                Email Address
               </label>
               <input
-                type="password"
-                id="password"
-                name="password"
-                value={formData.password}
+                type="email"
+                id="email"
+                name="email"
+                value={formData.email}
                 onChange={handleChange}
                 className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 transition duration-200 ${
-                  errors.password ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-blue-500"
+                  errors.email ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-blue-500"
                 }`}
-                placeholder="••••••••"
+                placeholder="Enter your email"
                 required
               />
-              {errors.password && <p className="text-red-500 text-sm mt-1">{errors.password}</p>}
-            </div>
-
-            <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-2">
-                Confirm New Password
-              </label>
-              <input
-                type="password"
-                id="confirmPassword"
-                name="confirmPassword"
-                value={formData.confirmPassword}
-                onChange={handleChange}
-                className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 transition duration-200 ${
-                  errors.confirmPassword ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-blue-500"
-                }`}
-                placeholder="••••••••"
-                required
-              />
-              {errors.confirmPassword && <p className="text-red-500 text-sm mt-1">{errors.confirmPassword}</p>}
+              {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
             </div>
 
             <button
@@ -129,10 +104,10 @@ function ResetPassword() {
               {loading ? (
                 <>
                   <LoadingSpinner size="sm" color="white" />
-                  <span className="ml-2">Resetting Password...</span>
+                  <span className="ml-2">Sending Reset Link...</span>
                 </>
               ) : (
-                "Reset Password"
+                "Send Reset Link"
               )}
             </button>
           </form>
@@ -154,7 +129,7 @@ function ResetPassword() {
         {modal.message}
       </Modal>
     </div>
-  )
+  );
 }
 
-export default ResetPassword
+export default ResetPassword;

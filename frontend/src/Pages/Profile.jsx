@@ -1,51 +1,59 @@
-import { Link } from "react-router-dom"
-import useAuthStore from "../store/authStore.js"
-import { Card, CardHeader, CardContent } from "../components/ui/Card.jsx"
-import Navbar from "../components/Navbar.jsx"
-import Footer from "../components/Footer.jsx"
+import { Link, useNavigate } from "react-router-dom"; // Added useNavigate
+import useAuthStore from "../store/authStore.js";
+import { Card, CardHeader, CardContent } from "../components/ui/Card.jsx";
+import Navbar from "../components/Navbar.jsx";
+import Footer from "../components/Footer.jsx";
 
 function Profile() {
-  const { user } = useAuthStore()
+  const { user } = useAuthStore();
+  const navigate = useNavigate(); // Added navigate hook
 
   const getDashboardLink = () => {
-    if (!user) return "/"
+    if (!user) return "/";
     switch (user.role) {
       case "admin":
-        return "/admin/dashboard"
+        return "/admin/dashboard";
       case "instructor":
-        return "/instructor/dashboard"
+        return "/instructor/dashboard";
       case "student":
-        return "/student/dashboard"
+        return "/student/dashboard";
       default:
-        return "/"
+        return "/";
     }
-  }
+  };
 
   const getRoleColor = (role) => {
     switch (role) {
       case "admin":
-        return "bg-red-100 text-red-800"
+        return "bg-red-100 text-red-800";
       case "instructor":
-        return "bg-blue-100 text-blue-800"
+        return "bg-blue-100 text-blue-800";
       case "student":
-        return "bg-green-100 text-green-800"
+        return "bg-green-100 text-green-800";
       default:
-        return "bg-gray-100 text-gray-800"
+        return "bg-gray-100 text-gray-800";
     }
-  }
+  };
 
   const getRoleIcon = (role) => {
     switch (role) {
       case "admin":
-        return "👑"
+        return "👑";
       case "instructor":
-        return "👨‍🏫"
+        return "👨‍🏫";
       case "student":
-        return "👨‍🎓"
+        return "👨‍🎓";
       default:
-        return "👤"
+        return "👤";
     }
-  }
+  };
+
+  // Handler for the Change Password button
+  const handleChangePassword = () => {
+    if (user) {
+      navigate("/forgot-password"); // Navigate to change password page
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -66,7 +74,7 @@ function Profile() {
                   <CardContent className="text-center">
                     <div className="text-6xl mb-4">{getRoleIcon(user.role)}</div>
                     <h2 className="text-2xl font-bold text-gray-900 mb-2">{user.name}</h2>
-                    <p className="text-gray-600 mb-4 ">{user.email}</p>
+                    <p className="text-gray-600 mb-4">{user.email}</p>
                     <span
                       className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${getRoleColor(user.role)}`}
                     >
@@ -135,7 +143,10 @@ function Profile() {
                           >
                             Go to Dashboard
                           </Link>
-                          <button className="bg-gray-100 text-gray-800 px-6 py-3 rounded-lg hover:bg-gray-200 transition duration-200 font-medium">
+                          <button
+                            onClick={handleChangePassword} // Added click handler
+                            className="bg-gray-100 text-gray-800 px-6 py-3 rounded-lg hover:bg-gray-200 transition duration-200 font-medium"
+                          >
                             Change Password
                           </button>
                         </div>
@@ -165,7 +176,7 @@ function Profile() {
 
       <Footer />
     </div>
-  )
+  );
 }
 
-export default Profile
+export default Profile;

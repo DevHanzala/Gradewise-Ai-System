@@ -1,10 +1,9 @@
 import { create } from "zustand"
 import axios from "axios"
+import toast from "react-hot-toast"
 
-// Get the API base URL from environment variables
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api"
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api"
 
-// Create the submission store
 const useSubmissionStore = create((set, get) => ({
   // State
   submissions: [],
@@ -22,7 +21,7 @@ const useSubmissionStore = create((set, get) => ({
   submitAssignment: async (submissionData) => {
     set({ loading: true, error: null })
     try {
-      const response = await axios.post(`${API_BASE_URL}/submissions`, submissionData)
+      const response = await axios.post(`${API_URL}/submissions`, submissionData)
       const submission = response.data.submission
 
       // Update or add the submission to the submissions list
@@ -58,7 +57,7 @@ const useSubmissionStore = create((set, get) => ({
   getAssignmentSubmissions: async (assignmentId) => {
     set({ loading: true, error: null })
     try {
-      const response = await axios.get(`${API_BASE_URL}/submissions/assignment/${assignmentId}`)
+      const response = await axios.get(`${API_URL}/submissions/assignment/${assignmentId}`)
       set({ submissions: response.data.submissions, loading: false })
       return response.data.submissions
     } catch (error) {
@@ -75,7 +74,7 @@ const useSubmissionStore = create((set, get) => ({
   getStudentSubmissions: async () => {
     set({ loading: true, error: null })
     try {
-      const response = await axios.get(`${API_BASE_URL}/submissions/student/list`)
+      const response = await axios.get(`${API_URL}/submissions/student/list`)
       set({ submissions: response.data.submissions, loading: false })
       return response.data.submissions
     } catch (error) {
@@ -93,7 +92,7 @@ const useSubmissionStore = create((set, get) => ({
   getSubmissionById: async (submissionId) => {
     set({ loading: true, error: null })
     try {
-      const response = await axios.get(`${API_BASE_URL}/submissions/${submissionId}`)
+      const response = await axios.get(`${API_URL}/submissions/${submissionId}`)
       set({ currentSubmission: response.data.submission, loading: false })
       return response.data.submission
     } catch (error) {
@@ -112,7 +111,7 @@ const useSubmissionStore = create((set, get) => ({
   gradeSubmission: async (submissionId, gradeData) => {
     set({ loading: true, error: null })
     try {
-      const response = await axios.put(`${API_BASE_URL}/submissions/${submissionId}/grade`, gradeData)
+      const response = await axios.put(`${API_URL}/submissions/${submissionId}/grade`, gradeData)
       const gradedSubmission = response.data.submission
 
       // Update the submission in the submissions list
@@ -143,7 +142,7 @@ const useSubmissionStore = create((set, get) => ({
   deleteSubmission: async (submissionId) => {
     set({ loading: true, error: null })
     try {
-      const response = await axios.delete(`${API_BASE_URL}/submissions/${submissionId}`)
+      const response = await axios.delete(`${API_URL}/submissions/${submissionId}`)
 
       // Remove the submission from the submissions list
       set((state) => ({
@@ -167,7 +166,7 @@ const useSubmissionStore = create((set, get) => ({
   getInstructorSubmissions: async () => {
     set({ loading: true, error: null })
     try {
-      const response = await axios.get(`${API_BASE_URL}/submissions/instructor/list`)
+      const response = await axios.get(`${API_URL}/submissions/instructor/list`)
       set({ submissions: response.data.submissions, loading: false })
       return response.data.submissions
     } catch (error) {
@@ -184,7 +183,7 @@ const useSubmissionStore = create((set, get) => ({
   getAllSubmissions: async () => {
     set({ loading: true, error: null })
     try {
-      const response = await axios.get(`${API_BASE_URL}/submissions/admin/all`)
+      const response = await axios.get(`${API_URL}/submissions/admin/all`)
       set({ submissions: response.data.submissions, loading: false })
       return response.data.submissions
     } catch (error) {

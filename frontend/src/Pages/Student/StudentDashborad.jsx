@@ -29,22 +29,20 @@ function StudentDashboard() {
     }
   }
 
-  useEffect(() => {
+useEffect(() => {
   if (studentAssessments.length > 0) {
-    // Only keep assessments the student can still attempt
     const attemptable = studentAssessments.filter((a) => {
       const status = getAssessmentStatus(a).status
       return status === "available" || status === "upcoming"
     })
-
-    const completed = studentAssessments.filter((a) => getAssessmentStatus(a).status === "completed").length
-    const pending = attemptable.length // treat attemptable as pending
-
+    const completed = studentAssessments.filter((a) => getAssessmentStatus(a).status === "completed")
+    const totalScore = completed.reduce((sum, a) => sum + (a.score || 0), 0)
+    const averageScore = completed.length > 0 ? Math.round(totalScore / completed.length) : 0
     setStats({
-      totalAssessments: attemptable.length,   // 👈 only count attemptable
-      completedAssessments: completed,
-      pendingAssessments: pending,
-      averageScore: 0,
+      totalAssessments: attemptable.length,
+      completedAssessments: completed.length,
+      pendingAssessments: attemptable.length,
+      averageScore,
     })
   } else {
     setStats({
@@ -55,7 +53,6 @@ function StudentDashboard() {
     })
   }
 }, [studentAssessments])
-
 
   const getAssessmentStatus = (assessment) => {
     const now = new Date()

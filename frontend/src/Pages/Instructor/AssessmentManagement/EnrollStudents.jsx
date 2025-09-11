@@ -1,396 +1,152 @@
-import { useState, useEffect } from "react"
-import { useParams, useNavigate, Link } from "react-router-dom"
-import useAssessmentStore from "../../../store/assessmentStore.js"
-import useAuthStore from "../../../store/authStore.js"
-import { Card, CardHeader, CardContent } from "../../../components/ui/Card.jsx"
-import LoadingSpinner from "../../../components/ui/LoadingSpinner.jsx"
-import Modal from "../../../components/ui/Modal.jsx"
-import Navbar from "../../../components/Navbar.jsx"
-import Footer from "../../../components/Footer.jsx"
-import toast from "react-hot-toast"
+import { useState, useEffect } from "react";
+import { useParams } from "react-router-dom";
+import useAssessmentStore from "../../../store/assessmentStore.js";
+import { Card, CardHeader, CardContent } from "../../../components/ui/Card";
+import LoadingSpinner from "../../../components/ui/LoadingSpinner";
+import Modal from "../../../components/ui/Modal";
+import Navbar from "../../../components/Navbar";
+import Footer from "../../../components/Footer";
+import toast from "react-hot-toast";
 
 function EnrollStudents() {
-  const { assessmentId } = useParams()
-  const navigate = useNavigate()
-  const { user } = useAuthStore()
-  const {
-    currentAssessment,
-    enrolledStudents,
-    loading,
-    getAssessmentById,
-    getEnrolledStudents,
-    enrollStudent,
-    enrollStudentsByEmail,
-  } = useAssessmentStore()
-
-  const [studentEmail, setStudentEmail] = useState("")
-  const [bulkEmails, setBulkEmails] = useState("")
-  const [isEnrolling, setIsEnrolling] = useState(false)
-  const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" })
-  const [availableStudents, setAvailableStudents] = useState([])
-  const [selectedStudents, setSelectedStudents] = useState([])
-  const [searchTerm, setSearchTerm] = useState("")
+  const { assessmentId } = useParams();
+  const { enrolledStudents, loading, getEnrolledStudents, enrollStudent, enrollStudentsByEmail, unenrollStudent } = useAssessmentStore();
+  const [singleEmail, setSingleEmail] = useState("");
+  const [bulkEmails, setBulkEmails] = useState("");
+  const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" });
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        console.log("🔄 EnrollStudents: Starting to fetch data...")
-        await getAssessmentById(assessmentId)
-        console.log("✅ EnrollStudents: Assessment data fetched")
-        await getEnrolledStudents(assessmentId)
-        console.log("✅ EnrollStudents: Enrolled students fetched")
-        await fetchAvailableStudents()
-        console.log("✅ EnrollStudents: Available students fetched")
-      } catch (error) {
-        console.error("❌ EnrollStudents: Failed to fetch data:", error)
-        toast.error("Failed to load enrollment data")
-      }
-    }
+    getEnrolledStudents(assessmentId);
+  }, [assessmentId, getEnrolledStudents]);
 
-    if (assessmentId) {
-      fetchData()
+  const handleSingleEnroll = async (e) => {
+    e.preventDefault();
+    if (!singleEmail.trim()) {
+      toast.error("Enter an email");
+      return;
     }
-  }, [assessmentId, getAssessmentById, getEnrolledStudents])
-
-  const fetchAvailableStudents = async () => {
     try {
-      const token = localStorage.getItem("token")
-      if (!token) {
-        return
-      }
-
-      const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000/api"}/assessments/${assessmentId}/available-students`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        if (data.success) {
-          setAvailableStudents(data.data || [])
-        }
-      } else if (response.status === 401 || response.status === 403) {
-        // Not authorized; silently ignore and let manual email enrollment be used
-        setAvailableStudents([])
-      }
+      await enrollStudent(assessmentId, singleEmail);
+      toast.success("Student enrolled");
+      setSingleEmail("");
+      getEnrolledStudents(assessmentId);
     } catch (error) {
-      console.error("Failed to fetch available students:", error)
-      setAvailableStudents([])
+      toast.error(error.message || "Failed to enroll student");
     }
-  }
+  };
+
+  const handleBulkEnroll = async (e) => {
+    e.preventDefault();
+    const emails = bulkEmails.split("\n").map((email) => email.trim()).filter(Boolean);
+    if (emails.length === 0) {
+      toast.error("Enter at least one email");
+      return;
+    }
+    try {
+      await enrollStudentsByEmail(assessmentId, emails);
+      toast.success(`${emails.length} students enrolled`);
+      setBulkEmails("");
+      getEnrolledStudents(assessmentId);
+    } catch (error) {
+      toast.error(error.message || "Failed to enroll students");
+    }
+  };
+
+  const handleUnenroll = async (studentId) => {
+    if (window.confirm("Unenroll this student?")) {
+      try {
+        await unenrollStudent(assessmentId, studentId);
+        toast.success("Student unenrolled");
+        getEnrolledStudents(assessmentId);
+      } catch (error) {
+        toast.error(error.message || "Failed to unenroll student");
+      }
+    }
+  };
 
   const showModal = (type, title, message) => {
-    setModal({ isOpen: true, type, title, message })
-  }
+    setModal({ isOpen: true, type, title, message });
+  };
 
-  const handleSingleEnrollment = async (e) => {
-    e.preventDefault()
-    if (!studentEmail.trim()) {
-      toast.error("Please enter a student email")
-      return
-    }
-
-    setIsEnrolling(true)
-    try {
-      await enrollStudent(assessmentId, studentEmail.trim())
-      toast.success("Student enrolled successfully!")
-      setStudentEmail("")
-      await getEnrolledStudents(assessmentId)
-      await fetchAvailableStudents()
-    } catch (error) {
-      console.error("Failed to enroll student:", error)
-      toast.error(error.response?.data?.message || "Failed to enroll student")
-    } finally {
-      setIsEnrolling(false)
-    }
-  }
-
-  const handleBulkEnrollment = async (e) => {
-    e.preventDefault()
-    if (!bulkEmails.trim()) {
-      toast.error("Please enter student emails")
-      return
-    }
-
-    const emails = bulkEmails
-      .split(/[,\n]/)
-      .map((email) => email.trim())
-      .filter((email) => email)
-
-    if (emails.length === 0) {
-      toast.error("Please enter valid email addresses")
-      return
-    }
-
-    setIsEnrolling(true)
-    try {
-      await enrollStudentsByEmail(assessmentId, emails)
-      setBulkEmails("")
-      await getEnrolledStudents(assessmentId)
-      await fetchAvailableStudents()
-    } catch (error) {
-      console.error("Bulk enrollment error:", error)
-      toast.error(error.response?.data?.message || "Failed to enroll students")
-    } finally {
-      setIsEnrolling(false)
-    }
-  }
-
-  const handleSelectStudent = (student) => {
-    setSelectedStudents((prev) => {
-      const isSelected = prev.find((s) => s.id === student.id)
-      if (isSelected) {
-        return prev.filter((s) => s.id !== student.id)
-      } else {
-        return [...prev, student]
-      }
-    })
-  }
-
-  const handleEnrollSelected = async () => {
-    if (selectedStudents.length === 0) {
-      toast.error("Please select students to enroll")
-      return
-    }
-
-    setIsEnrolling(true)
-    try {
-      const emails = selectedStudents.map((student) => student.email)
-      await enrollStudentsByEmail(assessmentId, emails)
-      setSelectedStudents([])
-      await getEnrolledStudents(assessmentId)
-      await fetchAvailableStudents()
-    } catch (error) {
-      console.error("Selected enrollment error:", error)
-      toast.error(error.response?.data?.message || "Failed to enroll selected students")
-    } finally {
-      setIsEnrolling(false)
-    }
-  }
-
-  const filteredStudents = availableStudents.filter((student) => {
-    const isAlreadyEnrolled = enrolledStudents?.some((enrolled) => enrolled.id === student.id)
-    const matchesSearch =
-      student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.email.toLowerCase().includes(searchTerm.toLowerCase())
-    return !isAlreadyEnrolled && matchesSearch
-  })
-
-  if (!currentAssessment) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
         <Navbar />
-        <div className="flex justify-center items-center h-64">
-          <LoadingSpinner size="lg" />
-          <span className="ml-3 text-gray-600">Loading assessment...</span>
+        <div className="flex items-center justify-center h-96">
+          <LoadingSpinner />
         </div>
         <Footer />
       </div>
-    )
+    );
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <h1 className="text-3xl font-bold text-gray-900 mb-4">Enroll Students</h1>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {/* Single Enroll */}
+          <Card>
+            <CardHeader>
+              <h2 className="text-xl font-semibold text-gray-900">Enroll Single Student</h2>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSingleEnroll} className="space-y-4">
+                <input
+                  type="email"
+                  value={singleEmail}
+                  onChange={(e) => setSingleEmail(e.target.value)}
+                  placeholder="Student email"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  required
+                />
+                <button type="submit" className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                  Enroll
+                </button>
+              </form>
+            </CardContent>
+          </Card>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <Link
-            to={`/instructor/assessments/${assessmentId}`}
-            className="text-blue-600 hover:text-blue-800 mb-2 inline-block"
-          >
-            ← Back to Assessment Details
-          </Link>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Enroll Students</h1>
-          <p className="text-gray-600">Add students to: {currentAssessment.title}</p>
+          {/* Bulk Enroll */}
+          <Card>
+            <CardHeader>
+              <h2 className="text-xl font-semibold text-gray-900">Bulk Enroll</h2>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleBulkEnroll} className="space-y-4">
+                <textarea
+                  value={bulkEmails}
+                  onChange={(e) => setBulkEmails(e.target.value)}
+                  placeholder="Enter emails, one per line"
+                  rows={5}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                />
+                <button type="submit" className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                  Enroll Bulk
+                </button>
+              </form>
+            </CardContent>
+          </Card>
         </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Enrollment Methods */}
-          <div className="space-y-6">
-            {/* Single Student Enrollment */}
-            <Card>
-              <CardHeader>
-                <h2 className="text-xl font-semibold text-gray-900">Enroll Single Student</h2>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleSingleEnrollment} className="space-y-4">
-                  <div>
-                    <label htmlFor="studentEmail" className="block text-sm font-medium text-gray-700 mb-1">
-                      Student Email
-                    </label>
-                    <input
-                      type="email"
-                      id="studentEmail"
-                      value={studentEmail}
-                      onChange={(e) => setStudentEmail(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="student@example.com"
-                      required
-                      autoComplete="email"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={isEnrolling}
-                    className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition duration-200"
-                  >
-                    {isEnrolling ? "Enrolling..." : "Enroll Student"}
-                  </button>
-                </form>
-              </CardContent>
-            </Card>
-
-            {/* Bulk Enrollment */}
-            <Card>
-              <CardHeader>
-                <h2 className="text-xl font-semibold text-gray-900">Bulk Enrollment</h2>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleBulkEnrollment} className="space-y-4">
-                  <div>
-                    <label htmlFor="bulkEmails" className="block text-sm font-medium text-gray-700 mb-1">
-                      Student Emails (comma or line separated)
-                    </label>
-                    <textarea
-                      id="bulkEmails"
-                      value={bulkEmails}
-                      onChange={(e) => setBulkEmails(e.target.value)}
-                      rows={6}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="student1@example.com, student2@example.com&#10;student3@example.com"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={isEnrolling}
-                    className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition duration-200"
-                  >
-                    {isEnrolling ? "Enrolling..." : "Enroll All Students"}
-                  </button>
-                </form>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Available Students */}
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <div className="flex justify-between items-center">
-                  <h2 className="text-xl font-semibold text-gray-900">Available Students</h2>
-                  {selectedStudents.length > 0 && (
-                    <button
-                      onClick={handleEnrollSelected}
-                      disabled={isEnrolling}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition duration-200"
-                    >
-                      Enroll Selected ({selectedStudents.length})
-                    </button>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                {/* Search */}
-                <div className="mb-4">
-                  <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Search students..."
-                    autoComplete="search"
-                  />
-                </div>
-
-                {/* Students List */}
-                <div className="max-h-96 overflow-y-auto space-y-2">
-                  {filteredStudents.length > 0 ? (
-                    filteredStudents.map((student) => (
-                      <div
-                        key={student.id}
-                        className={`p-3 border rounded-lg cursor-pointer transition duration-200 ${
-                          selectedStudents.find((s) => s.id === student.id)
-                            ? "border-blue-500 bg-blue-50"
-                            : "border-gray-200 hover:border-gray-300"
-                        }`}
-                        onClick={() => handleSelectStudent(student)}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h3 className="font-medium text-gray-900">{student.name}</h3>
-                            <p className="text-sm text-gray-600">{student.email}</p>
-                          </div>
-                          <div className="flex items-center">
-                            <input
-                              type="checkbox"
-                              checked={selectedStudents.find((s) => s.id === student.id) ? true : false}
-                              onChange={() => handleSelectStudent(student)}
-                              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-center py-8">
-                      <div className="text-4xl mb-4">👥</div>
-                      <h3 className="text-lg font-medium text-gray-900 mb-2">No Available Students</h3>
-                      <p className="text-gray-600">
-                        {searchTerm
-                          ? "No students match your search criteria."
-                          : "All students are already enrolled or no students exist."}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Currently Enrolled */}
-            <Card>
-              <CardHeader>
-                <h2 className="text-xl font-semibold text-gray-900">
-                  Currently Enrolled ({enrolledStudents?.length || 0})
-                </h2>
-                {enrolledStudents && (
-                  <div className="text-sm text-gray-500">
-                    Debug: {JSON.stringify(enrolledStudents)}
-                  </div>
-                )}
-              </CardHeader>
-              <CardContent>
-                {enrolledStudents && enrolledStudents.length > 0 ? (
-                  <div className="max-h-64 overflow-y-auto space-y-2">
-                    {enrolledStudents.map((student) => (
-                      <div key={student.id} className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h3 className="font-medium text-gray-900">{student.name}</h3>
-                            <p className="text-sm text-gray-600">{student.email}</p>
-                          </div>
-                          <span className="inline-flex px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">
-                            Enrolled
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-4">
-                    <p className="text-gray-600">No students enrolled yet.</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+        {/* Enrolled Students List */}
+        <Card className="mt-8">
+          <CardHeader>
+            <h2 className="text-xl font-semibold text-gray-900">Enrolled Students ({enrolledStudents.length})</h2>
+          </CardHeader>
+          <CardContent>
+            {enrolledStudents.map((student) => (
+              <div key={student.id} className="flex justify-between items-center mb-4">
+                <p>{student.name} ({student.email})</p>
+                <button onClick={() => handleUnenroll(student.id)} className="text-red-600">
+                  Unenroll
+                </button>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
       </div>
-
       <Footer />
-
       <Modal
         isOpen={modal.isOpen}
         onClose={() => setModal({ ...modal, isOpen: false })}
@@ -400,7 +156,7 @@ function EnrollStudents() {
         {modal.message}
       </Modal>
     </div>
-  )
+  );
 }
 
-export default EnrollStudents
+export default EnrollStudents;

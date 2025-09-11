@@ -1,4 +1,3 @@
-// backend/routes/dashboardRoutes.js
 import { Router } from "express"
 import { getAdminOverview, getInstructorOverview, getStudentOverview } from "../controllers/dashboardController.js"
 import { protect, authorizeRoles } from "../middleware/authMiddleware.js"

@@ -1,13 +1,15 @@
-import { useState, useEffect } from "react"
-import { Link, useParams } from "react-router-dom"
-import useAuthStore from "../store/authStore.js"
+import { useState, useEffect } from "react";
+import { Link } from "react-router-dom"; // Removed useParams, added useSearchParams
+import { useSearchParams } from "react-router-dom"; // Add this import
+import useAuthStore from "../store/authStore.js";
 
 function VerifyEmail() {
-  const { token } = useParams() // Get token from URL params
-  const verifyEmail = useAuthStore((state) => state.verifyEmail)
+  const [searchParams] = useSearchParams(); // Get query params
+  const token = searchParams.get("token"); // Extract token from ?token=...
+  const verifyEmail = useAuthStore((state) => state.verifyEmail);
 
-  const [loading, setLoading] = useState(true)
-  const [result, setResult] = useState(null)
+  const [loading, setLoading] = useState(true);
+  const [result, setResult] = useState(null);
 
   useEffect(() => {
     const handleVerification = async () => {
@@ -16,31 +18,33 @@ function VerifyEmail() {
           success: false,
           message: "Invalid verification link - no token provided.",
           status: "no_token",
-        })
-        setLoading(false)
-        return
+        });
+        setLoading(false);
+        return;
       }
 
       try {
-        const response = await verifyEmail(token)
-        setResult(response)
+        const response = await verifyEmail(token);
+        setResult(response);
+        console.log("Verification response:", response); // Debug log
       } catch (error) {
+        console.error("Verification error:", error); // Debug log
         if (error.response && error.response.data) {
-          setResult(error.response.data)
+          setResult(error.response.data);
         } else {
           setResult({
             success: false,
-            message: "An unexpected error occurred during verification.",
+            message: `An unexpected error occurred during verification: ${error.message}`,
             status: "network_error",
-          })
+          });
         }
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
-    }
+    };
 
-    handleVerification()
-  }, [token, verifyEmail])
+    handleVerification();
+  }, [token, verifyEmail]);
 
   if (loading) {
     return (
@@ -53,10 +57,12 @@ function VerifyEmail() {
           </div>
         </div>
       </div>
-    )
+    );
   }
 
-  const isSuccess = result?.success || ["already_verified", "just_verified", "already_used"].includes(result?.status)
+  const isSuccess =
+    result?.success ||
+    ["already_verified", "just_verified", "already_used"].includes(result?.status);
 
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
@@ -99,7 +105,7 @@ function VerifyEmail() {
           <div className="space-y-4">
             <div className="text-red-600 text-6xl mb-4">✗</div>
             <h3 className="text-xl font-semibold text-red-600">Verification Failed</h3>
-            <p className="text-gray-600">{result.message}</p>
+            <p className="text-gray-600">{result?.message || "An unknown error occurred."}</p>
 
             <div className="bg-gray-50 border border-gray-200 rounded-md p-4 mt-4">
               <p className="text-gray-800 text-sm">
@@ -130,7 +136,7 @@ function VerifyEmail() {
         )}
       </div>
     </div>
-  )
+  );
 }
 
-export default VerifyEmail
+export default VerifyEmail;

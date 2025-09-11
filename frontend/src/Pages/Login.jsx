@@ -1,5 +1,3 @@
-"use client"
-
 import { useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { z } from "zod"
@@ -9,6 +7,8 @@ import LoadingSpinner from "../components/ui/LoadingSpinner.jsx"
 import Modal from "../components/ui/Modal.jsx"
 import Navbar from "../components/Navbar.jsx"
 import Footer from "../components/Footer.jsx"
+import toast from "react-hot-toast"
+import axios from "axios"
 
 // Zod schema for login validation
 const loginSchema = z.object({
@@ -41,6 +41,7 @@ function Login() {
 
   const showModal = (type, title, message) => {
     setModal({ isOpen: true, type, title, message })
+    toast[type === "success" ? "success" : "error"](message)
   }
 
   const redirectUser = (user) => {
@@ -67,12 +68,22 @@ function Login() {
     setLoading(true)
     setErrors({})
 
+    // Validate formData exists
+    if (!formData) {
+      showModal("error", "Form Error", "Form data is undefined. Please try again.")
+      setLoading(false)
+      return
+    }
+
     try {
       // Validate form data
       loginSchema.parse(formData)
 
       // Attempt login
       const user = await login(formData)
+      localStorage.setItem('token', user.token)
+      axios.defaults.headers.common['Authorization'] = `Bearer ${user.token}`
+      console.log('✅ Login successful, token set:', user.token)
       showModal("success", "Login Successful!", `Welcome back, ${user.name}!`)
 
       // Redirect based on role after a short delay
@@ -101,6 +112,9 @@ function Login() {
     setGoogleLoading(true)
     try {
       const user = await googleAuth()
+      localStorage.setItem('token', user.token)
+      axios.defaults.headers.common['Authorization'] = `Bearer ${user.token}`
+      console.log('✅ Google login successful, token set:', user.token)
       showModal("success", "Welcome!", `Successfully signed in with Google! Welcome back, ${user.name}!`)
 
       // Redirect based on role after a short delay

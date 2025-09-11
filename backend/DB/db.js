@@ -1,12 +1,12 @@
-import pkg from "pg"
-import dotenv from "dotenv"
+import { Pool } from "pg";
+import dotenv from "dotenv";
+import { ensureAssessmentsTable } from "../models/assessmentModel.js";
+import { ensureResourcesTable, ensureResourceChunksTable } from "../models/resourceModel.js";
 
 // Load environment variables
-dotenv.config()
+dotenv.config();
 
-const { Pool } = pkg
-
-// Create a new pool instance with connection parameters from environment variables
+// Create a new pool instance
 const pool = new Pool({
   host: process.env.PGHOST,
   database: process.env.PGDATABASE,
@@ -16,23 +16,26 @@ const pool = new Pool({
   ssl: {
     require: true,
   },
-})
+});
 
 /**
- * Function to connect to the database and create tables if they don't exist
+ * Function to connect to the database and ensure tables
  */
 export const connectDB = async () => {
   try {
-    // Test the connection
-    const client = await pool.connect()
-    console.log("✅ Connected to PostgreSQL database successfully!")
-    console.log("✅ All database tables checked/created successfully")
-    client.release()
-  } catch (error) {
-    console.error("❌ Database connection error:", error)
-    throw error
-  }
-}
+    const client = await pool.connect();
+    console.log("✅ Connected to PostgreSQL database successfully!");
+    client.release();
 
-// Export the pool for use in other modules
-export default pool
+    // Ensure tables in correct order: resources, resource_chunks, assessments
+    await ensureResourcesTable();
+    await ensureResourceChunksTable();
+    await ensureAssessmentsTable();
+  } catch (error) {
+    console.error("❌ Database connection error:", error);
+    throw error;
+  }
+};
+
+// Export the pool
+export default pool;

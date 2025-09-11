@@ -1,157 +1,193 @@
-import pool from "../DB/db.js"
+import pool from "../DB/db.js";
+import fs from "fs/promises";
 
-/**
- * Creates a new resource in the database.
- * @param {Object} resourceData - Resource data object.
- * @returns {Promise<Object>} The newly created resource object.
- */
+export const ensureResourcesTable = async () => {
+  try {
+    const tableCheck = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'resources'
+      )
+    `);
+    if (!tableCheck.rows[0].exists) {
+      console.log("Creating resources table...");
+      await pool.query(`
+        CREATE TABLE resources (
+          id SERIAL PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          file_path TEXT,
+          file_type VARCHAR(50),
+          file_size INTEGER,
+          url TEXT,
+          content_type VARCHAR(20) NOT NULL,
+          visibility VARCHAR(20) DEFAULT 'private',
+          uploaded_by INTEGER REFERENCES users(id) ON DELETE CASCADE,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await pool.query(`
+        CREATE INDEX idx_resources_uploaded_by ON resources(uploaded_by);
+      `);
+      console.log("✅ resources table created");
+    }
+  } catch (error) {
+    console.error("❌ Error creating resources table:", error);
+    throw error;
+  }
+};
+
+export const ensureResourceChunksTable = async () => {
+  try {
+    const tableCheck = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'resource_chunks'
+      )
+    `);
+    if (!tableCheck.rows[0].exists) {
+      console.log("Creating resource_chunks table...");
+      await pool.query(`
+        CREATE TABLE resource_chunks (
+          id SERIAL PRIMARY KEY,
+          resource_id INTEGER REFERENCES resources(id) ON DELETE CASCADE,
+          chunk_text TEXT NOT NULL,
+          embedding VECTOR(384),
+          chunk_index INTEGER NOT NULL,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await pool.query(`
+        CREATE INDEX idx_resource_chunks_resource_id ON resource_chunks(resource_id);
+      `);
+      console.log("✅ resource_chunks table created");
+    }
+  } catch (error) {
+    console.error("❌ Error creating resource_chunks table:", error);
+    throw error;
+  }
+};
+
 export const createResource = async (resourceData) => {
-   
   if (!resourceData) {
     throw new Error("resourceData is required to create a resource");
   } 
-  
-  const {
-    name,
-    filePath,
-    fileType,
-    fileSize,
-    url,
-    contentType,
-    visibility,
-    uploadedBy
-  } = resourceData
-
+  const { name, file_path, file_type, file_size, url, content_type, visibility, uploaded_by } = resourceData;
   const query = `
     INSERT INTO resources (name, file_path, file_type, file_size, url, content_type, visibility, uploaded_by) 
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
-    RETURNING id, name, file_path, file_type, file_size, url, content_type, visibility, uploaded_by, vectorized, created_at
-  `
+    RETURNING *
+  `;
+  const values = [name, file_path, file_type, file_size, url, content_type, visibility, uploaded_by];
   
-  const { rows } = await pool.query(query, [
-    name, filePath, fileType, fileSize, url, contentType, visibility, uploadedBy
-  ])
-  
-  return rows[0]
-}
+  try {
+    const { rows } = await pool.query(query, values);
+    console.log(`✅ Created resource: ID=${rows[0].id}`);
+    return rows[0];
+  } catch (error) {
+    console.error("❌ Error creating resource:", error);
+    throw error;
+  }
+};
 
-/**
- * Finds resources by uploader ID.
- * @param {number} uploadedBy - The ID of the uploader.
- * @param {string} visibility - Optional visibility filter.
- * @returns {Promise<Array>} Array of resources.
- */
 export const findResourcesByUploader = async (uploadedBy, visibility = null) => {
   let query = `
     SELECT r.*, u.name as uploader_name
     FROM resources r
     JOIN users u ON r.uploaded_by = u.id
     WHERE r.uploaded_by = $1
-  `
-  
-  const params = [uploadedBy]
+  `;
+  const params = [uploadedBy];
   
   if (visibility) {
-    query += ` AND r.visibility = $2`
-    params.push(visibility)
+    query += ` AND r.visibility = $2`;
+    params.push(visibility);
   }
   
-  query += ` ORDER BY r.created_at DESC`
+  query += ` ORDER BY r.created_at DESC`;
   
-  const { rows } = await pool.query(query, params)
-  return rows
-}
+  try {
+    const { rows } = await pool.query(query, params);
+    return rows;
+  } catch (error) {
+    console.error("❌ Error fetching resources by uploader:", error);
+    throw error;
+  }
+};
 
-/**
- * Finds a resource by ID.
- * @param {number} resourceId - The ID of the resource.
- * @returns {Promise<Object|undefined>} The resource object if found.
- */
 export const findResourceById = async (resourceId) => {
   const query = `
     SELECT r.*, u.name as uploader_name
     FROM resources r
     JOIN users u ON r.uploaded_by = u.id
     WHERE r.id = $1
-  `
-  const { rows } = await pool.query(query, [resourceId])
-  return rows[0]
-}
+  `;
+  try {
+    const { rows } = await pool.query(query, [resourceId]);
+    return rows[0];
+  } catch (error) {
+    console.error("❌ Error fetching resource by ID:", error);
+    throw error;
+  }
+};
 
-/**
- * Updates a resource in the database.
- * @param {number} resourceId - The ID of the resource to update.
- * @param {Object} updateData - Object containing fields to update.
- * @returns {Promise<Object|undefined>} The updated resource object.
- */
 export const updateResource = async (resourceId, updateData) => {
-  const { name, visibility, vectorized } = updateData
-  
+  const { name, visibility } = updateData;
   const query = `
     UPDATE resources 
     SET name = COALESCE($1, name), 
         visibility = COALESCE($2, visibility),
-        vectorized = COALESCE($3, vectorized)
-    WHERE id = $4 
+        updated_at = NOW()
+    WHERE id = $3 
     RETURNING *
-  `
-  const { rows } = await pool.query(query, [name, visibility, vectorized, resourceId])
-  return rows[0]
-}
+  `;
+  try {
+    const { rows } = await pool.query(query, [name, visibility, resourceId]);
+    return rows[0];
+  } catch (error) {
+    console.error("❌ Error updating resource:", error);
+    throw error;
+  }
+};
 
-/**
- * Deletes a resource from the database.
- * @param {number} resourceId - The ID of the resource to delete.
- * @returns {Promise<Object|undefined>} The deleted resource object.
- */
 export const deleteResource = async (resourceId) => {
-  const query = `
-    DELETE FROM resources 
-    WHERE id = $1 
-    RETURNING *
-  `
-  const { rows } = await pool.query(query, [resourceId])
-  return rows[0]
-}
+  try {
+    await pool.query("DELETE FROM resource_chunks WHERE resource_id = $1", [resourceId]);
+    const query = `
+      DELETE FROM resources 
+      WHERE id = $1 
+      RETURNING *
+    `;
+    const { rows } = await pool.query(query, [resourceId]);
+    if (rows[0]?.file_path) {
+      await fs.unlink(rows[0].file_path).catch(err => console.error("❌ Error deleting file:", err));
+    }
+    return rows[0];
+  } catch (error) {
+    console.error("❌ Error deleting resource:", error);
+    throw error;
+  }
+};
 
-/**
- * Gets all public resources.
- * @returns {Promise<Array>} Array of public resources.
- */
-export const getPublicResources = async () => {
-  const query = `
-    SELECT r.*, u.name as uploader_name
-    FROM resources r
-    JOIN users u ON r.uploaded_by = u.id
-    WHERE r.visibility = 'public'
-    ORDER BY r.created_at DESC
-  `
-  const { rows } = await pool.query(query)
-  return rows
-}
-
-/**
- * Links a resource to an assessment.
- * @param {number} assessmentId - The ID of the assessment.
- * @param {number} resourceId - The ID of the resource.
- * @returns {Promise<Object>} The created link record.
- */
 export const linkResourceToAssessment = async (assessmentId, resourceId) => {
   const query = `
     INSERT INTO assessment_resources (assessment_id, resource_id) 
     VALUES ($1, $2) 
     ON CONFLICT (assessment_id, resource_id) DO NOTHING
     RETURNING *
-  `
-  const { rows } = await pool.query(query, [assessmentId, resourceId])
-  return rows[0]
-}
+  `;
+  try {
+    const { rows } = await pool.query(query, [assessmentId, resourceId]);
+    console.log(`✅ Linked resource ID=${resourceId} to assessment ID=${assessmentId}`);
+    return rows[0];
+  } catch (error) {
+    console.error("❌ Error linking resource to assessment:", error);
+    throw error;
+  }
+};
 
-/**
- * Gets resources linked to an assessment.
- * @param {number} assessmentId - The ID of the assessment.
- * @returns {Promise<Array>} Array of linked resources.
- */
 export const getAssessmentResources = async (assessmentId) => {
   const query = `
     SELECT r.*, u.name as uploader_name, ar.created_at as linked_at
@@ -160,39 +196,27 @@ export const getAssessmentResources = async (assessmentId) => {
     JOIN users u ON r.uploaded_by = u.id
     WHERE ar.assessment_id = $1
     ORDER BY ar.created_at DESC
-  `
-  const { rows } = await pool.query(query, [assessmentId])
-  return rows
-}
+  `;
+  try {
+    const { rows } = await pool.query(query, [assessmentId]);
+    return rows;
+  } catch (error) {
+    console.error("❌ Error fetching assessment resources:", error);
+    throw error;
+  }
+};
 
-/**
- * Removes a resource link from an assessment.
- * @param {number} assessmentId - The ID of the assessment.
- * @param {number} resourceId - The ID of the resource.
- * @returns {Promise<Object|undefined>} The removed link record.
- */
 export const unlinkResourceFromAssessment = async (assessmentId, resourceId) => {
   const query = `
     DELETE FROM assessment_resources 
     WHERE assessment_id = $1 AND resource_id = $2 
     RETURNING *
-  `
-  const { rows } = await pool.query(query, [assessmentId, resourceId])
-  return rows[0]
-}
-
-/**
- * Gets resources that need vectorization.
- * @returns {Promise<Array>} Array of resources pending vectorization.
- */
-export const getResourcesForVectorization = async () => {
-  const query = `
-    SELECT r.*, u.name as uploader_name
-    FROM resources r
-    JOIN users u ON r.uploaded_by = u.id
-    WHERE r.vectorized = false AND r.content_type = 'file'
-    ORDER BY r.created_at ASC
-  `
-  const { rows } = await pool.query(query)
-  return rows
-}
+  `;
+  try {
+    const { rows } = await pool.query(query, [assessmentId, resourceId]);
+    return rows[0];
+  } catch (error) {
+    console.error("❌ Error unlinking resource from assessment:", error);
+    throw error;
+  }
+};
