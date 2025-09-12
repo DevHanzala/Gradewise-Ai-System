@@ -12,7 +12,7 @@ import toast from "react-hot-toast"
 function CreateAssessment() {
   const navigate = useNavigate()
   const { createAssessment, loading, error } = useAssessmentStore()
-  const { resources, fetchResources, loading: resourcesLoading } = useResourceStore()
+  const { resources, fetchAllResources, loading: resourcesLoading } = useResourceStore()
   const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" })
 
   const [formData, setFormData] = useState({
@@ -30,10 +30,11 @@ function CreateAssessment() {
 
   const [selectedResources, setSelectedResources] = useState([])
   const [newFiles, setNewFiles] = useState([])
+  const [resourceMode, setResourceMode] = useState("upload") // "upload" or "select"
 
   useEffect(() => {
-    fetchResources()
-  }, [fetchResources])
+    fetchAllResources() // Fetch all file-based resources
+  }, [fetchAllResources])
 
   const handleInputChange = (e) => {
     const { name, value } = e.target
@@ -84,10 +85,13 @@ function CreateAssessment() {
     }))
   }
 
-  const handleResourceSelection = (resourceId) => {
-    setSelectedResources(prev => 
-      prev.includes(resourceId) ? prev.filter(id => id !== resourceId) : [...prev, resourceId]
-    )
+  const handleResourceSelection = (e) => {
+    const resourceId = Number.parseInt(e.target.value)
+    if (resourceId) {
+      setSelectedResources([resourceId]) // Single selection for simplicity
+    } else {
+      setSelectedResources([])
+    }
   }
 
   const handleNewFiles = (e) => {
@@ -120,6 +124,16 @@ function CreateAssessment() {
 
     if (questionBlocks.length === 0 || questionBlocks.some(block => !block.question_type || block.question_count < 1)) {
       showModal("error", "Validation Error", "At least one valid question block is required with a valid type and count.")
+      return
+    }
+
+    if (resourceMode === "select" && selectedResources.length === 0) {
+      showModal("error", "Validation Error", "Please select a resource or switch to upload mode.")
+      return
+    }
+
+    if (resourceMode === "upload" && newFiles.length === 0) {
+      showModal("error", "Validation Error", "Please upload at least one file or switch to select mode.")
       return
     }
 
@@ -268,58 +282,85 @@ function CreateAssessment() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Select Existing Resources (to reuse and save tokens)
+                  Resource Selection
                 </label>
-                {resourcesLoading ? (
-                  <LoadingSpinner />
-                ) : resources.length === 0 ? (
-                  <p className="text-gray-600">No existing resources available.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {resources.map((resource) => (
-                      <div key={resource.id} className="flex items-center">
-                        <input
-                          type="checkbox"
-                          id={`resource-${resource.id}`}
-                          checked={selectedResources.includes(resource.id)}
-                          onChange={() => handleResourceSelection(resource.id)}
-                          className="mr-2"
-                        />
-                        <label htmlFor={`resource-${resource.id}`}>{resource.name} ({resource.type})</label>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                <div className="flex space-x-4 mb-4">
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="resourceMode"
+                      value="upload"
+                      checked={resourceMode === "upload"}
+                      onChange={() => setResourceMode("upload")}
+                      className="mr-2"
+                    />
+                    Upload New Documents
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="resourceMode"
+                      value="select"
+                      checked={resourceMode === "select"}
+                      onChange={() => setResourceMode("select")}
+                      className="mr-2"
+                    />
+                    Select Existing Resources
+                  </label>
+                </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Upload New Documents (PDF, PPT, TXT, DOC, etc.)
-                </label>
-                <input
-                  type="file"
-                  multiple
-                  accept=".pdf,.ppt,.pptx,.txt,.doc,.docx"
-                  onChange={handleNewFiles}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  New uploads will be chunked and stored efficiently.
-                </p>
-                {newFiles.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {newFiles.map((file, index) => (
-                      <div key={index} className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">{file.name}</span>
-                        <button
-                          type="button"
-                          onClick={() => removeNewFile(index)}
-                          className="text-red-600 hover:text-red-800 text-sm"
-                        >
-                          Remove
-                        </button>
+                {resourceMode === "upload" ? (
+                  <div>
+                    <input
+                      type="file"
+                      multiple
+                      accept=".pdf,.ppt,.pptx,.txt,.doc,.docx"
+                      onChange={handleNewFiles}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Accepted formats: PDF, PPT, TXT, DOC (Max: 10MB each). New uploads will be chunked.
+                    </p>
+                    {newFiles.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {newFiles.map((file, index) => (
+                          <div key={index} className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">{file.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => removeNewFile(index)}
+                              className="text-red-600 hover:text-red-800 text-sm"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Select a Resource (to reuse and save tokens)
+                    </label>
+                    {resourcesLoading ? (
+                      <LoadingSpinner />
+                    ) : resources.length === 0 ? (
+                      <p className="text-gray-600">No existing resources available.</p>
+                    ) : (
+                      <select
+                        value={selectedResources[0] || ""}
+                        onChange={handleResourceSelection}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">-- Select a resource --</option>
+                        {resources.map((resource) => (
+                          <option key={resource.id} value={resource.id}>
+                            {resource.name} ({resource.file_type || resource.content_type})
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </div>
                 )}
               </div>

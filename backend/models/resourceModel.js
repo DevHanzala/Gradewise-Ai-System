@@ -117,6 +117,23 @@ export const findResourcesByUploader = async (uploadedBy, visibility = null) => 
   }
 };
 
+export const findAllResources = async () => {
+  const query = `
+    SELECT r.*, u.name as uploader_name
+    FROM resources r
+    JOIN users u ON r.uploaded_by = u.id
+    WHERE r.content_type = 'file'
+    ORDER BY r.created_at DESC
+  `;
+  try {
+    const { rows } = await pool.query(query);
+    return rows;
+  } catch (error) {
+    console.error("❌ Error fetching all resources:", error);
+    throw error;
+  }
+};
+
 export const findResourceById = async (resourceId) => {
   const query = `
     SELECT r.*, u.name as uploader_name

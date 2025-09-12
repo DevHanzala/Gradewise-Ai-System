@@ -1,57 +1,51 @@
-import { useState, useEffect } from "react"
-import { Link } from "react-router-dom"
-import useAuthStore from "../../store/authStore.js"
-import useAssessmentStore from "../../store/assessmentStore.js"
-import useDashboardStore from "../../store/dashboardStore.js"
-import { Card, CardHeader, CardContent } from "../../components/ui/Card"
-import LoadingSpinner from "../../components/ui/LoadingSpinner"
-import Modal from "../../components/ui/Modal"
-import Navbar from "../../components/Navbar"
-import Footer from "../../components/Footer"
-import toast from "react-hot-toast"
-import { useNavigate } from "react-router-dom"
+import { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import useAuthStore from "../../store/authStore.js";
+import useAssessmentStore from "../../store/assessmentStore.js";
+import useDashboardStore from "../../store/dashboardStore.js";
+import { Card, CardHeader, CardContent } from "../../components/ui/Card.jsx";
+import LoadingSpinner from "../../components/ui/LoadingSpinner.jsx";
+import Modal from "../../components/ui/Modal.jsx";
+import Navbar from "../../components/Navbar.jsx";
+import Footer from "../../components/Footer.jsx";
+import toast from "react-hot-toast";
 
 function InstructorDashboard() {
-  const navigate = useNavigate()
-  const { user } = useAuthStore()
-  const { assessments, getInstructorAssessments } = useAssessmentStore()
-  const { overview, loading, getInstructorOverview } = useDashboardStore()
-  const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" })
-  const [isLoading, setIsLoading] = useState(true)
+  const navigate = useNavigate();
+  const { user } = useAuthStore();
+  const { assessments, getInstructorAssessments } = useAssessmentStore();
+  const { overview, loading, getInstructorOverview } = useDashboardStore();
+  const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" });
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
-      setIsLoading(true)
+      setIsLoading(true);
       try {
-        await getInstructorAssessments()
-        if (getInstructorOverview) {
-          try {
-            await getInstructorOverview()
-          } catch (overviewError) {
-            console.warn("Failed to fetch overview data:", overviewError)
-            toast.error("Failed to fetch overview data")
-          }
-        }
+        await Promise.all([
+          getInstructorAssessments(),
+          getInstructorOverview(),
+        ]);
       } catch (error) {
-        console.error("Failed to fetch dashboard data:", error)
-        const errorMessage = error.response?.data?.message || error.message || "Failed to fetch dashboard data. Please try again."
-        setModal({ isOpen: true, type: "error", title: "Error", message: errorMessage })
-        toast.error(errorMessage)
+        console.error("❌ Failed to fetch dashboard data:", error);
+        const errorMessage = error.response?.data?.message || error.message || "Failed to fetch dashboard data. Please try again.";
+        setModal({ isOpen: true, type: "error", title: "Error", message: errorMessage });
+        toast.error(errorMessage);
         if (error.response?.status === 403 || error.message === "No authentication token found") {
-          navigate("/login")
+          navigate("/login");
         }
       } finally {
-        setIsLoading(false)
+        setIsLoading(false);
       }
-    }
+    };
 
-    fetchData()
-  }, [getInstructorAssessments, getInstructorOverview, navigate])
+    fetchData();
+  }, [getInstructorAssessments, getInstructorOverview, navigate]);
 
   const showModal = (type, title, message) => {
-    setModal({ isOpen: true, type, title, message })
-    toast[type === "success" ? "success" : "error"](message)
-  }
+    setModal({ isOpen: true, type, title, message });
+    toast[type === "success" ? "success" : "error"](message);
+  };
 
   const quickActions = [
     {
@@ -75,12 +69,11 @@ function InstructorDashboard() {
       link: "/instructor/assessments",
       color: "bg-purple-500 hover:bg-purple-600",
     },
-  ]
+  ];
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Welcome Section */}
         <div className="mb-8">
@@ -88,7 +81,7 @@ function InstructorDashboard() {
           <p className="text-gray-600">Welcome back, {user?.name}! Manage your assessments and resources.</p>
         </div>
 
-        {isLoading ? (
+        {isLoading || loading ? (
           <div className="flex justify-center items-center h-64">
             <LoadingSpinner size="lg" />
             <span className="ml-3 text-gray-600">Loading dashboard data...</span>
@@ -99,19 +92,19 @@ function InstructorDashboard() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
               <Card>
                 <CardContent className="text-center">
-                  <div className="text-3xl font-bold text-blue-600">{assessments?.length || 0}</div>
+                  <div className="text-3xl font-bold text-blue-600">{overview.assessments || 0}</div>
                   <div className="text-gray-600">My Assessments</div>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="text-center">
-                  <div className="text-3xl font-bold text-green-600">{overview?.resources || 0}</div>
+                  <div className="text-3xl font-bold text-green-600">{overview.resources || 0}</div>
                   <div className="text-gray-600">Resources</div>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="text-center">
-                  <div className="text-3xl font-bold text-purple-600">{overview?.executedAssessments || 0}</div>
+                  <div className="text-3xl font-bold text-purple-600">{overview.executedAssessments || 0}</div>
                   <div className="text-gray-600">Executed Assessments</div>
                 </CardContent>
               </Card>
@@ -209,9 +202,7 @@ function InstructorDashboard() {
           </>
         )}
       </div>
-
       <Footer />
-
       <Modal
         isOpen={modal.isOpen}
         onClose={() => setModal({ ...modal, isOpen: false })}
@@ -221,7 +212,7 @@ function InstructorDashboard() {
         {modal.message}
       </Modal>
     </div>
-  )
+  );
 }
 
-export default InstructorDashboard
+export default InstructorDashboard;

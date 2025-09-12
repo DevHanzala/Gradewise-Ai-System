@@ -5,7 +5,7 @@ import "./App.css";
 // Auth Pages
 import Login from "./Pages/Login";
 import Signup from "./Pages/Signup";
-import ResetPassword from "./Pages/ResetPassword"; // Reuse this component
+import ResetPassword from "./Pages/ResetPassword";
 import SetNewPassword from "./Pages/SetNewPassword";
 import VerifyEmail from "./Pages/VerifyEmail";
 
@@ -27,15 +27,9 @@ import ResourceManagement from "./Pages/Instructor/AssessmentManagement/Resource
 import AssessmentList from "./Pages/Instructor/AssessmentManagement/AssessmentList";
 import AssessmentDetail from "./Pages/Instructor/AssessmentManagement/AssessmentDetail";
 import EditAssessment from "./Pages/Instructor/AssessmentManagement/EditAssessment";
-
 import EnrollStudents from "./Pages/Instructor/AssessmentManagement/EnrollStudents";
 import AddStudent from "./Pages/Instructor/AddStudent";
 import AssessmentAnalytics from "./Pages/Instructor/AssessmentManagement/AssessmentAnalytics";
-
-///merge into student flow
-import GenerateQuestions from "./Pages/Instructor/AssessmentManagement/GenerateQuestions";
-import AIGenerationInterface from "./Pages/Instructor/AssessmentManagement/AIGenerationInterface";
-import AutoGradingInterface from "./Pages/Instructor/AssessmentManagement/AutoGradingInterface";
 
 // Student Pages
 import StudentDashboard from "./Pages/Student/StudentDashborad";
@@ -54,8 +48,8 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
-          <Route path="/forgot-password" element={<ResetPassword />} /> 
-          <Route path="/reset-password/:resetId" element={<SetNewPassword />}/>
+          <Route path="/forgot-password" element={<ResetPassword />} />
+          <Route path="/reset-password/:resetId" element={<SetNewPassword />} />
           <Route path="/verify-email" element={<VerifyEmail />} />
 
           {/* Protected Routes */}
@@ -94,6 +88,14 @@ function App() {
             element={
               <ProtectedRoute requiredRole="instructor">
                 <InstructorDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instructor/resources"
+            element={
+              <ProtectedRoute requiredRole="instructor">
+                <ResourceManagement />
               </ProtectedRoute>
             }
           />
@@ -145,30 +147,7 @@ function App() {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/instructor/assessments/:assessmentId/generate-questions"
-            element={
-              <ProtectedRoute requiredRole="instructor">
-                <GenerateQuestions />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/instructor/assessments/:assessmentId/ai-generation"
-            element={
-              <ProtectedRoute requiredRole="instructor">
-                <AIGenerationInterface />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/instructor/assessments/:assessmentId/auto-grading"
-            element={
-              <ProtectedRoute requiredRole="instructor">
-                <AutoGradingInterface />
-              </ProtectedRoute>
-            }
-          />
+          
           <Route
             path="/instructor/assessments/:assessmentId/analytics"
             element={
@@ -204,7 +183,7 @@ function App() {
             }
           />
           <Route
-            path="/student/assessments/:assessmentId/take"
+            path="/instructor/assessments/:assessmentId/take"
             element={
               <ProtectedRoute requiredRole="student">
                 <TakeAssessment />

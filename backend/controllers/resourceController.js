@@ -1,4 +1,5 @@
 import fs from "fs/promises";
+import path from "path";
 import {
   createResource,
   findResourcesByUploader,
@@ -8,6 +9,7 @@ import {
   linkResourceToAssessment,
   getAssessmentResources,
   unlinkResourceFromAssessment,
+  findAllResources,
 } from "../models/resourceModel.js";
 import { getAssessmentById, storeResourceChunk } from "../models/assessmentModel.js";
 import { extractTextFromFile, chunkText } from "../services/textProcessor.js";
@@ -120,6 +122,25 @@ export const getInstructorResources = async (req, res) => {
   }
 };
 
+export const getAllResources = async (req, res) => {
+  try {
+    console.log(`🔄 Fetching all file-based resources`);
+    const resources = await findAllResources();
+    res.status(200).json({
+      success: true,
+      message: "System resources retrieved successfully",
+      data: resources || [],
+    });
+  } catch (error) {
+    console.error("❌ Get all resources error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to retrieve system resources",
+      error: error.message,
+    });
+  }
+};
+
 export const getResourceById = async (req, res) => {
   try {
     const resourceId = req.params.resourceId;
@@ -134,7 +155,6 @@ export const getResourceById = async (req, res) => {
       return res.status(404).json({ success: false, message: "Resource not found" });
     }
 
-    // Check permissions
     if (userRole === "instructor" && resource.uploaded_by !== Number.parseInt(userId)) {
       return res.status(403).json({ success: false, message: "Access denied" });
     }
@@ -209,6 +229,23 @@ export const deleteResourceController = async (req, res) => {
       return res.status(403).json({ success: false, message: "Access denied" });
     }
 
+    // Delete file from filesystem if it exists
+    if (resource.file_path) {
+      const filePath = path.join(process.cwd(), resource.file_path);
+      try {
+        await fs.access(filePath);
+        await fs.unlink(filePath);
+        console.log(`✅ Deleted file: ${filePath}`);
+      } catch (err) {
+        if (err.code !== "ENOENT") {
+          console.error(`❌ Error deleting file ${filePath}:`, err);
+        } else {
+          console.log(`⚠️ File not found, skipping deletion: ${filePath}`);
+        }
+      }
+    }
+
+    // Delete resource from database
     await deleteResource(resourceId);
 
     res.status(200).json({

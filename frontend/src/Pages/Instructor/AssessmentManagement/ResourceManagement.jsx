@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import useResourceStore from "../../../store/resourceStore.js";
 import { Card, CardHeader, CardContent } from "../../../components/ui/Card";
 import LoadingSpinner from "../../../components/ui/LoadingSpinner";
@@ -9,15 +10,16 @@ import toast from "react-hot-toast";
 
 function ResourceManagement() {
   const navigate = useNavigate();
-  const { resources, loading, fetchResources, uploadResources, deleteResource } = useResourceStore();
+  const { resources, loading, fetchResources, uploadResources, deleteResource, clearCurrentResource } = useResourceStore();
   const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" });
 
-  // Load resources on mount (global)
+  // Load resources on mount
   useEffect(() => {
     fetchResources();
-  }, [fetchResources]);
+    return () => clearCurrentResource();
+  }, [fetchResources, clearCurrentResource]);
 
-  // Handle resource upload (global, backend chunks new PDFs)
+  // Handle resource upload
   const handleResourceUpload = async (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) {
@@ -25,7 +27,7 @@ function ResourceManagement() {
       return;
     }
     try {
-      await uploadResources(files); // Removed assessmentId, now global
+      await uploadResources(files);
       toast.success(`${files.length} resource(s) uploaded and chunked successfully.`);
       fetchResources();
     } catch (error) {
@@ -37,7 +39,7 @@ function ResourceManagement() {
   const handleDeleteResource = async (resourceId) => {
     if (window.confirm("Are you sure you want to delete this resource?")) {
       try {
-        await deleteResource(resourceId); // Removed assessmentId
+        await deleteResource(resourceId);
         toast.success("Resource deleted successfully.");
         fetchResources();
       } catch (error) {
@@ -46,9 +48,13 @@ function ResourceManagement() {
     }
   };
 
-  // Modal display
-  const showModal = (type, title, message) => {
-    setModal({ isOpen: true, type, title, message });
+  // Format file size
+  const formatFileSize = (bytes) => {
+    if (!bytes) return "N/A";
+    const sizes = ["Bytes", "KB", "MB", "GB"];
+    if (bytes === 0) return "0 Byte";
+    const i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)));
+    return Math.round(bytes / Math.pow(1024, i), 2) + " " + sizes[i];
   };
 
   // Loading state
@@ -107,14 +113,18 @@ function ResourceManagement() {
                   <div key={resource.id} className="flex justify-between items-center p-4 border border-gray-200 rounded-md">
                     <div>
                       <p className="font-medium">{resource.name}</p>
-                      <p className="text-sm text-gray-500">{resource.type} • {resource.size} MB</p>
+                      <p className="text-sm text-gray-500">
+                        {resource.file_type || resource.content_type} • {formatFileSize(resource.file_size)}
+                      </p>
                     </div>
-                    <button
-                      onClick={() => handleDeleteResource(resource.id)}
-                      className="text-red-600 hover:text-red-800"
-                    >
-                      Delete
-                    </button>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => handleDeleteResource(resource.id)}
+                        className="text-red-600 hover:text-red-800"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

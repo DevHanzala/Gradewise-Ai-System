@@ -1,12 +1,19 @@
-import { Router } from "express"
-import { getAdminOverview, getInstructorOverview, getStudentOverview } from "../controllers/dashboardController.js"
-import { protect, authorizeRoles } from "../middleware/authMiddleware.js"
+import express from "express";
+import { getInstructorOverview } from "../controllers/dashboardController.js";
+import { protect, authorizeRoles } from "../middleware/authMiddleware.js";
 
-const router = Router()
+const router = express.Router();
 
-// Dashboard overview routes
-router.get("/admin/overview", protect, authorizeRoles("admin"), getAdminOverview)
-router.get("/instructor/overview", protect, authorizeRoles("instructor"), getInstructorOverview)
-router.get("/student/overview", protect, authorizeRoles("student"), getStudentOverview)
+/**
+ * @route   GET /api/dashboard
+ * @desc    Get instructor dashboard overview
+ * @access  Private (Instructor, Admin, Super Admin)
+ */
+router.get(
+  "/",
+  protect,
+  authorizeRoles(["instructor", "admin", "super_admin"]),
+  getInstructorOverview
+);
 
-export default router
+export default router;

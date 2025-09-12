@@ -5,6 +5,7 @@ import fs from "fs/promises";
 import {
   uploadResource,
   getInstructorResources,
+  getAllResources,
   getResourceById,
   updateResourceController,
   deleteResourceController,
@@ -82,6 +83,18 @@ router.get(
   protect,
   authorizeRoles(["instructor", "admin", "super_admin"]),
   getInstructorResources
+);
+
+/**
+ * @route   GET /api/resources/all
+ * @desc    Get all file-based resources in the system
+ * @access  Private (Instructor, Admin, Super Admin)
+ */
+router.get(
+  "/all",
+  protect,
+  authorizeRoles(["instructor", "admin", "super_admin"]),
+  getAllResources
 );
 
 /**

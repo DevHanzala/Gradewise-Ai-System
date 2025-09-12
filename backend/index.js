@@ -4,15 +4,7 @@ import dotenv from "dotenv";
 import { connectDB } from "./DB/db.js";
 import authRoutes from "./routes/authRoutes.js";
 import assessmentRoutes from "./routes/assessmentRoutes.js";
-// import assessmentTakingRoutes from "./routes/assessmentTakingRoutes.js";
-// import aiGenerationRoutes from "./routes/aiGenerationRoutes.js";
-// import autoGradingRoutes from "./routes/autoGradingRoutes.js";
-// import studentAnalyticsRoutes from "./routes/studentAnalyticsRoutes.js";
-// import enrollmentRoutes from "./routes/enrollmentRoutes.js";
-// import questionBankRoutes from "./routes/questionBankRoutes.js";
-// import questionRoutes from "./routes/questionRoutes.js";
 import resourceRoutes from "./routes/resourceRoutes.js";
-// import submissionRoutes from "./routes/submissionRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import { errorHandler, notFound } from "./middleware/errorMiddleware.js";
 import fs from "fs/promises";
@@ -58,16 +50,8 @@ if (process.env.NODE_ENV === "development") {
 
 // Routes
 app.use("/api/auth", authRoutes);
-// app.use("/api/assessments", assessmentTakingRoutes);
 app.use("/api/assessments", assessmentRoutes);
-// app.use("/api/ai-generation", aiGenerationRoutes);
-// app.use("/api/auto-grading", autoGradingRoutes);
-// app.use("/api/student-analytics", studentAnalyticsRoutes);
-// app.use("/api/enrollment", enrollmentRoutes);
-// app.use("/api/question-bank", questionBankRoutes);
-// app.use("/api/questions", questionRoutes);
 app.use("/api/resources", resourceRoutes);
-// app.use("/api/submissions", submissionRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 
 // Health check endpoint
