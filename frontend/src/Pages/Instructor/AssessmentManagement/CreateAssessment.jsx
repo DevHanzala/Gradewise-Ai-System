@@ -127,16 +127,6 @@ function CreateAssessment() {
       return
     }
 
-    if (resourceMode === "select" && selectedResources.length === 0) {
-      showModal("error", "Validation Error", "Please select a resource or switch to upload mode.")
-      return
-    }
-
-    if (resourceMode === "upload" && newFiles.length === 0) {
-      showModal("error", "Validation Error", "Please upload at least one file or switch to select mode.")
-      return
-    }
-
     try {
       const assessmentData = {
         title: formData.title,
@@ -282,7 +272,7 @@ function CreateAssessment() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Resource Selection
+                  Resource Selection (Optional)
                 </label>
                 <div className="flex space-x-4 mb-4">
                   <label className="flex items-center">
@@ -353,7 +343,7 @@ function CreateAssessment() {
                         onChange={handleResourceSelection}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
-                        <option value="">-- Select a resource --</option>
+                        <option value="">-- Select a resource (optional) --</option>
                         {resources.map((resource) => (
                           <option key={resource.id} value={resource.id}>
                             {resource.name} ({resource.file_type || resource.content_type})
