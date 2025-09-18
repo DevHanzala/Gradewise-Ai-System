@@ -1,7 +1,7 @@
-import nodemailer from "nodemailer"
-import dotenv from "dotenv"
+import nodemailer from "nodemailer";
+import dotenv from "dotenv";
 
-dotenv.config()
+dotenv.config();
 
 // Create transporter
 const transporter = nodemailer.createTransport({
@@ -10,7 +10,7 @@ const transporter = nodemailer.createTransport({
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
-})
+});
 
 /**
  * Send email with template support
@@ -23,24 +23,24 @@ export const sendEmail = async (to, subject, htmlContent, textContent = null) =>
       subject,
       html: htmlContent,
       text: textContent || htmlContent.replace(/<[^>]*>/g, ""), // Strip HTML for text version
-    }
+    };
 
-    const result = await transporter.sendMail(mailOptions)
-    console.log(`Email sent successfully to ${to}:`, result.messageId)
-    return { success: true, messageId: result.messageId }
+    const result = await transporter.sendMail(mailOptions);
+    console.log(`Email sent successfully to ${to}:`, result.messageId);
+    return { success: true, messageId: result.messageId };
   } catch (error) {
-    console.error(`Failed to send email to ${to}:`, error)
-    throw new Error(`Failed to send email: ${error.message}`)
+    console.error(`Failed to send email to ${to}:`, error);
+    throw new Error(`Failed to send email: ${error.message}`);
   }
-}
+};
 
 /**
  * Send verification email
  */
 export const sendVerificationEmail = async (email, name, verificationToken) => {
-  const verificationUrl = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`
+  const verificationUrl = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
 
-  const subject = "Verify Your Email - Gradewise AI"
+  const subject = "Verify Your Email - Gradewise AI";
   const htmlContent = `
     <!DOCTYPE html>
     <html>
@@ -85,18 +85,18 @@ export const sendVerificationEmail = async (email, name, verificationToken) => {
       </div>
     </body>
     </html>
-  `
+  `;
 
-  return await sendEmail(email, subject, htmlContent)
-}
+  return await sendEmail(email, subject, htmlContent);
+};
 
 /**
  * Send password reset email
  */
 export const sendPasswordResetEmail = async (email, name, resetToken) => {
-  const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`
+  const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
 
-  const subject = "Reset Your Password - Gradewise AI"
+  const subject = "Reset Your Password - Gradewise AI";
   const htmlContent = `
     <!DOCTYPE html>
     <html>
@@ -156,18 +156,18 @@ export const sendPasswordResetEmail = async (email, name, resetToken) => {
       </div>
     </body>
     </html>
-  `
+  `;
 
-  return await sendEmail(email, subject, htmlContent)
-}
+  return await sendEmail(email, subject, htmlContent);
+};
 
 /**
  * Send welcome email after verification
  */
 export const sendWelcomeEmail = async (email, name, role) => {
-  const dashboardUrl = `${process.env.FRONTEND_URL}/dashboard`
+  const dashboardUrl = `${process.env.FRONTEND_URL}/dashboard`;
 
-  const subject = "Welcome to Gradewise AI - Let's Get Started!"
+  const subject = "Welcome to Gradewise AI - Let's Get Started!";
   const htmlContent = `
     <!DOCTYPE html>
     <html>
@@ -204,8 +204,8 @@ export const sendWelcomeEmail = async (email, name, role) => {
               role === "instructor"
                 ? `
               <ul>
-                <li>Create and manage courses</li>
-                <li>Generate AI-powered assessments</li>
+                <li>Create and manage assessments</li>
+                <li>Generate AI-powered questions</li>
                 <li>Enroll students and track progress</li>
                 <li>Get detailed analytics and insights</li>
                 <li>Provide personalized feedback</li>
@@ -214,16 +214,16 @@ export const sendWelcomeEmail = async (email, name, role) => {
                 : role === "student"
                   ? `
               <ul>
-                <li>Access your enrolled courses</li>
-                <li>Take AI-generated assessments</li>
-                <li>Track your learning progress</li>
+                <li>Access your assigned assessments</li>
+                <li>Take AI-generated tests</li>
+                <li>Track your progress</li>
                 <li>Receive personalized feedback</li>
                 <li>View detailed performance analytics</li>
               </ul>
             `
                   : `
               <ul>
-                <li>Manage all users and courses</li>
+                <li>Manage all users and assessments</li>
                 <li>Access platform analytics</li>
                 <li>Configure system settings</li>
                 <li>Monitor platform performance</li>
@@ -249,10 +249,10 @@ export const sendWelcomeEmail = async (email, name, role) => {
       </div>
     </body>
     </html>
-  `
+  `;
 
-  return await sendEmail(email, subject, htmlContent)
-}
+  return await sendEmail(email, subject, htmlContent);
+};
 
 /**
  * Send role change notification email
@@ -323,10 +323,10 @@ export const sendRoleChangeEmail = async (email, name, oldRole, newRole) => {
 /**
  * Send assessment enrollment email to students
  */
-export const sendAssessmentEnrollmentEmail = async (email, name, assessmentTitle, courseTitle, dueDate) => {
-  const dashboardUrl = `${process.env.FRONTEND_URL}/student/dashboard`
+export const sendAssessmentEnrollmentEmail = async (email, name, assessmentTitle, dueDate) => {
+  const dashboardUrl = `${process.env.FRONTEND_URL}/student/dashboard`;
 
-  const subject = `New Assessment Available: ${assessmentTitle}`
+  const subject = `New Assessment Available: ${assessmentTitle}`;
   const htmlContent = `
     <!DOCTYPE html>
     <html>
@@ -355,7 +355,6 @@ export const sendAssessmentEnrollmentEmail = async (email, name, assessmentTitle
           
           <div class="assessment-info">
             <h3>${assessmentTitle}</h3>
-            <p><strong>Course:</strong> ${courseTitle}</p>
             <p><strong>Due Date:</strong> ${new Date(dueDate).toLocaleDateString("en-US", {
               weekday: "long",
               year: "numeric",
@@ -390,18 +389,18 @@ export const sendAssessmentEnrollmentEmail = async (email, name, assessmentTitle
       </div>
     </body>
     </html>
-  `
+  `;
 
-  return await sendEmail(email, subject, htmlContent)
-}
+  return await sendEmail(email, subject, htmlContent);
+};
 
 /**
  * Send assessment reminder email
  */
 export const sendAssessmentReminderEmail = async (email, name, assessmentTitle, dueDate, hoursRemaining) => {
-  const dashboardUrl = `${process.env.FRONTEND_URL}/dashboard`
+  const dashboardUrl = `${process.env.FRONTEND_URL}/dashboard`;
 
-  const subject = `⏰ Reminder: ${assessmentTitle} Due Soon`
+  const subject = `⏰ Reminder: ${assessmentTitle} Due Soon`;
   const htmlContent = `
     <!DOCTYPE html>
     <html>
@@ -465,21 +464,21 @@ export const sendAssessmentReminderEmail = async (email, name, assessmentTitle, 
       </div>
     </body>
     </html>
-  `
+  `;
 
-  return await sendEmail(email, subject, htmlContent)
-}
+  return await sendEmail(email, subject, htmlContent);
+};
 
 /**
  * Test email configuration
  */
 export const testEmailConfiguration = async () => {
   try {
-    await transporter.verify()
-    console.log("Email configuration is valid")
-    return { success: true, message: "Email configuration is valid" }
+    await transporter.verify();
+    console.log("Email configuration is valid");
+    return { success: true, message: "Email configuration is valid" };
   } catch (error) {
-    console.error("Email configuration error:", error)
-    throw new Error(`Email configuration error: ${error.message}`)
+    console.error("Email configuration error:", error);
+    throw new Error(`Email configuration error: ${error.message}`);
   }
-}
+};

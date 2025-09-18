@@ -1,211 +1,267 @@
-import { create } from "zustand"
-import axios from "axios"
-import toast from "react-hot-toast"
+import { create } from "zustand";
+import axios from "axios";
+import toast from "react-hot-toast";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api"
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 const useAssessmentStore = create((set) => ({
   assessments: [],
   currentAssessment: null,
+  enrolledStudents: [],
   loading: false,
   error: null,
 
-  setLoading: (loading) => set({ loading }),
-  setError: (error) => set({ error }),
-  clearError: () => set({ error: null }),
-
-  createAssessment: async (assessmentData) => {
-    try {
-      set({ loading: true, error: null })
-
-      const token = localStorage.getItem("token")
-      if (!token) {
-        throw new Error("No authentication token found")
-      }
-
-      const formData = new FormData()
-      formData.append("title", assessmentData.title)
-      formData.append("prompt", assessmentData.prompt)
-      formData.append("externalLinks", JSON.stringify(assessmentData.externalLinks))
-      formData.append("question_blocks", JSON.stringify(assessmentData.question_blocks))
-      formData.append("selected_resources", JSON.stringify(assessmentData.selected_resources))
-      if (assessmentData.new_files && assessmentData.new_files.length > 0) {
-        assessmentData.new_files.forEach(file => formData.append("new_files", file))
-      }
-
-      const response = await axios.post(`${API_URL}/assessments`, formData, {
-        headers: { 
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "multipart/form-data"
-        },
-      })
-
-      if (response.data.success) {
-        const newAssessment = response.data.data
-        console.log(`✅ Created assessment: ID=${newAssessment.id}`)
-        set((state) => ({
-          assessments: [newAssessment, ...state.assessments],
-          loading: false,
-        }))
-        toast.success("Assessment created successfully!")
-        return newAssessment
-      } else {
-        throw new Error(response.data.message || "Failed to create assessment")
-      }
-    } catch (error) {
-      const errorMessage = error.response?.data?.message || error.message || "Failed to create assessment"
-      console.error("❌ Create assessment error:", error)
-      set({ error: errorMessage, loading: false })
-      toast.error(errorMessage)
-      throw error
-    }
-  },
-
   getInstructorAssessments: async () => {
+    set({ loading: true, error: null });
     try {
-      set({ loading: true, error: null })
-
-      const token = localStorage.getItem("token")
-      if (!token) {
-        throw new Error("No authentication token found")
-      }
-
+      const token = localStorage.getItem("token");
+      if (!token) throw new Error("No authentication token found");
       const response = await axios.get(`${API_URL}/assessments/instructor`, {
         headers: { Authorization: `Bearer ${token}` },
-      })
-
+      });
       if (response.data.success) {
-        set({
-          assessments: response.data.data || [],
-          loading: false,
-        })
-        return response.data.data
+        set({ assessments: response.data.data, loading: false });
       } else {
-        throw new Error(response.data.message || "Failed to fetch assessments")
+        set({ error: response.data.message, loading: false });
       }
     } catch (error) {
-      const errorMessage = error.response?.data?.message || error.message || "Failed to fetch assessments"
-      console.error("❌ Get instructor assessments error:", error)
-      set({ error: errorMessage, loading: false, assessments: [] })
-      toast.error(errorMessage)
-      throw error
+      const errorMessage = error.response?.data?.message || error.message || "Failed to fetch assessments";
+      set({ error: errorMessage, loading: false });
+      toast.error(errorMessage);
+      throw error;
     }
   },
 
   getAssessmentById: async (assessmentId) => {
+    set({ loading: true, error: null });
     try {
-      set({ loading: true, error: null })
-
-      const token = localStorage.getItem("token")
-      if (!token) {
-        throw new Error("No authentication token found")
+      if (!assessmentId || isNaN(parseInt(assessmentId))) {
+        throw new Error("Invalid assessment ID");
       }
-
-      const response = await axios.get(`${API_URL}/assessments/${assessmentId}`, {
+      const token = localStorage.getItem("token");
+      if (!token) throw new Error("No authentication token found");
+      const response = await axios.get(`${API_URL}/assessments/${parseInt(assessmentId)}`, {
         headers: { Authorization: `Bearer ${token}` },
-      })
-
+      });
       if (response.data.success) {
-        set({
-          currentAssessment: response.data.data,
-          loading: false,
-        })
-        return response.data.data
+        set({ currentAssessment: response.data.data, loading: false });
+        return response.data.data;
       } else {
-        throw new Error(response.data.message || "Failed to fetch assessment")
+        throw new Error(response.data.message);
       }
     } catch (error) {
-      const errorMessage = error.response?.data?.message || error.message || "Failed to fetch assessment"
-      console.error("❌ Get assessment error:", error)
-      set({ error: errorMessage, loading: false, currentAssessment: null })
-      toast.error(errorMessage)
-      throw error
+      const errorMessage = error.response?.data?.message || error.message || "Failed to fetch assessment";
+      set({ error: errorMessage, loading: false });
+      toast.error(errorMessage);
+      throw error;
+    }
+  },
+
+  createAssessment: async (assessmentData) => {
+    set({ loading: true, error: null });
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) throw new Error("No authentication token found");
+      const formData = new FormData();
+      formData.append("title", assessmentData.title);
+      formData.append("prompt", assessmentData.prompt);
+      console.log(`🔍 Sending externalLinks to backend:`, assessmentData.externalLinks);
+      formData.append("externalLinks", JSON.stringify(assessmentData.externalLinks));
+      formData.append("question_blocks", JSON.stringify(assessmentData.question_blocks));
+      const validSelectedResources = assessmentData.selected_resources.filter(id => id && !isNaN(id));
+      formData.append("selected_resources", JSON.stringify(validSelectedResources));
+      assessmentData.new_files?.forEach((file) => {
+        formData.append("new_files", file);
+      });
+
+      const response = await axios.post(`${API_URL}/assessments`, formData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "multipart/form-data",
+        },
+      });
+
+      if (response.data.success) {
+        set((state) => ({
+          assessments: [...state.assessments, response.data.data],
+          loading: false,
+        }));
+        return response.data.data;
+      } else {
+        throw new Error(response.data.message);
+      }
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || error.message || "Failed to create assessment";
+      set({ error: errorMessage, loading: false });
+      toast.error(errorMessage);
+      throw error;
     }
   },
 
   updateAssessment: async (assessmentId, assessmentData) => {
+    set({ loading: true, error: null });
     try {
-      set({ loading: true, error: null })
-
-      const token = localStorage.getItem("token")
-      if (!token) {
-        throw new Error("No authentication token found")
+      if (!assessmentId || isNaN(parseInt(assessmentId))) {
+        throw new Error("Invalid assessment ID");
       }
+      const token = localStorage.getItem("token");
+      if (!token) throw new Error("No authentication token found");
+      const formData = new FormData();
+      formData.append("title", assessmentData.title);
+      formData.append("prompt", assessmentData.prompt);
+      console.log(`🔍 Sending externalLinks to backend:`, assessmentData.externalLinks);
+      formData.append("externalLinks", JSON.stringify(assessmentData.externalLinks));
+      formData.append("question_blocks", JSON.stringify(assessmentData.question_blocks));
+      const validSelectedResources = assessmentData.selected_resources.filter(id => id && !isNaN(id));
+      formData.append("selected_resources", JSON.stringify(validSelectedResources));
+      assessmentData.new_files?.forEach((file) => {
+        formData.append("new_files", file);
+      });
 
-      const formData = new FormData()
-      formData.append("title", assessmentData.title)
-      formData.append("prompt", assessmentData.prompt)
-      formData.append("externalLinks", JSON.stringify(assessmentData.externalLinks))
-      formData.append("question_blocks", JSON.stringify(assessmentData.question_blocks))
-      formData.append("selected_resources", JSON.stringify(assessmentData.selected_resources))
-      if (assessmentData.new_files && assessmentData.new_files.length > 0) {
-        assessmentData.new_files.forEach(file => formData.append("new_files", file))
-      }
-
-      const response = await axios.put(`${API_URL}/assessments/${assessmentId}`, formData, {
-        headers: { 
+      const response = await axios.put(`${API_URL}/assessments/${parseInt(assessmentId)}`, formData, {
+        headers: {
           Authorization: `Bearer ${token}`,
-          "Content-Type": "multipart/form-data"
+          "Content-Type": "multipart/form-data",
         },
-      })
+      });
 
       if (response.data.success) {
-        const updated = response.data.data
-        console.log(`✅ Updated assessment: ID=${assessmentId}`)
         set((state) => ({
-          assessments: state.assessments.map(a => a.id === assessmentId ? updated : a),
-          currentAssessment: updated,
+          assessments: state.assessments.map((assessment) =>
+            assessment.id === assessmentId ? response.data.data : assessment
+          ),
+          currentAssessment: response.data.data,
           loading: false,
-        }))
-        toast.success("Assessment updated successfully!")
-        return updated
+        }));
+        return response.data.data;
       } else {
-        throw new Error(response.data.message || "Failed to update assessment")
+        throw new Error(response.data.message);
       }
     } catch (error) {
-      const errorMessage = error.response?.data?.message || error.message || "Failed to update assessment"
-      console.error("❌ Update assessment error:", error)
-      set({ error: errorMessage, loading: false })
-      toast.error(errorMessage)
-      throw error
+      const errorMessage = error.response?.data?.message || error.message || "Failed to update assessment";
+      set({ error: errorMessage, loading: false });
+      toast.error(errorMessage);
+      throw error;
     }
   },
 
   deleteAssessment: async (assessmentId) => {
+    set({ loading: true, error: null });
     try {
-      set({ loading: true, error: null })
-
-      const token = localStorage.getItem("token")
-      if (!token) {
-        throw new Error("No authentication token found")
+      if (!assessmentId || isNaN(parseInt(assessmentId))) {
+        throw new Error("Invalid assessment ID");
       }
-
-      const response = await axios.delete(`${API_URL}/assessments/${assessmentId}`, {
+      const token = localStorage.getItem("token");
+      if (!token) throw new Error("No authentication token found");
+      const response = await axios.delete(`${API_URL}/assessments/${parseInt(assessmentId)}`, {
         headers: { Authorization: `Bearer ${token}` },
-      })
-
+      });
       if (response.data.success) {
-        console.log(`✅ Deleted assessment: ID=${assessmentId}`)
         set((state) => ({
-          assessments: state.assessments.filter(a => a.id !== assessmentId),
-          currentAssessment: null,
+          assessments: state.assessments.filter((assessment) => assessment.id !== Number.parseInt(assessmentId)),
           loading: false,
-        }))
-        toast.success("Assessment deleted successfully!")
-        return true
+        }));
       } else {
-        throw new Error(response.data.message || "Failed to delete assessment")
+        throw new Error(response.data.message);
       }
     } catch (error) {
-      const errorMessage = error.response?.data?.message || error.message || "Failed to delete assessment"
-      console.error("❌ Delete assessment error:", error)
-      set({ error: errorMessage, loading: false })
-      toast.error(errorMessage)
-      throw error
+      const errorMessage = error.response?.data?.message || error.message || "Failed to delete assessment";
+      set({ error: errorMessage, loading: false });
+      toast.error(errorMessage);
+      throw error;
     }
   },
 
-  clearCurrentAssessment: () => set({ currentAssessment: null }),
-}))
+  getEnrolledStudents: async (assessmentId) => {
+    set({ loading: true, error: null });
+    try {
+      if (!assessmentId || isNaN(parseInt(assessmentId))) {
+        throw new Error("Invalid assessment ID");
+      }
+      const token = localStorage.getItem("token");
+      if (!token) throw new Error("No authentication token found");
+      const response = await axios.get(`${API_URL}/assessments/${parseInt(assessmentId)}/students`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.data.success) {
+        set({ enrolledStudents: response.data.data, loading: false });
+        return response.data.data;
+      } else {
+        throw new Error(response.data.message);
+      }
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || error.message || "Failed to fetch enrolled students";
+      set({ error: errorMessage, loading: false });
+      toast.error(errorMessage);
+      throw error;
+    }
+  },
 
-export default useAssessmentStore
+  enrollStudent: async (assessmentId, email) => {
+    set({ loading: true, error: null });
+    try {
+      if (!assessmentId || isNaN(parseInt(assessmentId))) {
+        throw new Error("Invalid assessment ID");
+      }
+      const token = localStorage.getItem("token");
+      if (!token) throw new Error("No authentication token found");
+      const response = await axios.post(
+        `${API_URL}/assessments/${parseInt(assessmentId)}/enroll`,
+        { email },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (response.data.success) {
+        set((state) => ({
+          enrolledStudents: [...state.enrolledStudents, response.data.data],
+          loading: false,
+        }));
+        return response.data.data;
+      } else {
+        throw new Error(response.data.message);
+      }
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || error.message || "Failed to enroll student";
+      set({ error: errorMessage, loading: false });
+      toast.error(errorMessage);
+      throw error;
+    }
+  },
+
+  unenrollStudent: async (assessmentId, studentId) => {
+    set({ loading: true, error: null });
+    try {
+      if (!assessmentId || isNaN(parseInt(assessmentId))) {
+        throw new Error("Invalid assessment ID");
+      }
+      const token = localStorage.getItem("token");
+      if (!token) throw new Error("No authentication token found");
+      const response = await axios.delete(`${API_URL}/assessments/${parseInt(assessmentId)}/unenroll/${studentId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.data.success) {
+        set((state) => ({
+          enrolledStudents: state.enrolledStudents.filter((student) => student.id !== Number.parseInt(studentId)),
+          loading: false,
+        }));
+        return response.data.data;
+      } else {
+        throw new Error(response.data.message);
+      }
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || error.message || "Failed to unenroll student";
+      set({ error: errorMessage, loading: false });
+      toast.error(errorMessage);
+      throw error;
+    }
+  },
+
+  clearError: () => {
+    set({ error: null });
+  },
+
+  clearCurrentAssessment: () => {
+    set({ currentAssessment: null });
+  },
+}));
+
+export default useAssessmentStore;

@@ -1,65 +1,69 @@
-import { useState, useEffect } from "react"
-import { Link } from "react-router-dom"
-import useAssessmentStore from "../../../store/assessmentStore.js"
-import { Card, CardHeader, CardContent } from "../../../components/ui/Card"
-import LoadingSpinner from "../../../components/ui/LoadingSpinner"
-import Modal from "../../../components/ui/Modal"
-import Navbar from "../../../components/Navbar"
-import Footer from "../../../components/Footer"
+import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
+import useAssessmentStore from "../../../store/assessmentStore.js";
+import { Card, CardHeader, CardContent } from "../../../components/ui/Card";
+import LoadingSpinner from "../../../components/ui/LoadingSpinner";
+import Modal from "../../../components/ui/Modal";
+import Navbar from "../../../components/Navbar";
+import Footer from "../../../components/Footer";
+import toast from "react-hot-toast";
 
 function AssessmentList() {
-  const { assessments, loading, getInstructorAssessments, deleteAssessment } = useAssessmentStore()
-  const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" })
-  const [searchTerm, setSearchTerm] = useState("")
-  const [isLoading, setIsLoading] = useState(true)
+  const { assessments, loading, getInstructorAssessments, deleteAssessment } = useAssessmentStore();
+  const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" });
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const fetchAssessments = async () => {
-      setIsLoading(true)
+    const fetchData = async () => {
+      setIsLoading(true);
       try {
-        await getInstructorAssessments()
+        await getInstructorAssessments();
       } catch (error) {
-        console.error("Failed to fetch assessments:", error)
-        showModal("error", "Error", "Failed to fetch assessments. Please try again.")
+        console.error("Failed to fetch assessments:", error);
+        showModal("error", "Error", "Failed to fetch assessments. Please try again.");
       } finally {
-        setIsLoading(false)
+        setIsLoading(false);
       }
-    }
+    };
 
-    fetchAssessments()
-  }, [getInstructorAssessments])
+    fetchData();
+  }, [getInstructorAssessments]);
 
   const showModal = (type, title, message) => {
-    setModal({ isOpen: true, type, title, message })
-  }
+    setModal({ isOpen: true, type, title, message });
+    toast[type === "success" ? "success" : "error"](message);
+  };
 
   const handleDeleteAssessment = async (assessmentId, assessmentTitle) => {
     if (window.confirm(`Are you sure you want to delete "${assessmentTitle}"? This action cannot be undone.`)) {
       try {
-        await deleteAssessment(assessmentId)
-        showModal("success", "Success", "Assessment deleted successfully!")
+        await deleteAssessment(assessmentId);
+        showModal("success", "Success", "Assessment deleted successfully!");
         setTimeout(() => {
-          getInstructorAssessments()
-        }, 1000)
+          getInstructorAssessments();
+        }, 1000);
       } catch (error) {
-        console.error("Failed to delete assessment:", error)
-        showModal("error", "Error", "Failed to delete assessment. Please try again.")
+        console.error("Failed to delete assessment:", error);
+        showModal("error", "Error", "Failed to delete assessment. Please try again.");
       }
     }
-  }
+  };
 
   const filteredAssessments =
     assessments?.filter((assessment) => {
+      if (!assessment || !assessment.id) {
+        console.warn("⚠️ Invalid assessment in filteredAssessments:", assessment);
+        return false;
+      }
       const matchesSearch =
-        assessment.title.toLowerCase().includes(searchTerm.toLowerCase())
-
-      return matchesSearch
-    }) || []
+        assessment.title.toLowerCase().includes(searchTerm.toLowerCase());
+      return matchesSearch;
+    }) || [];
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
@@ -95,7 +99,7 @@ function AssessmentList() {
         </Card>
 
         {/* Assessment List */}
-        {isLoading ? (
+        {isLoading || loading ? (
           <div className="flex justify-center items-center h-64">
             <LoadingSpinner size="lg" />
             <span className="ml-3 text-gray-600">Loading assessments...</span>
@@ -163,19 +167,27 @@ function AssessmentList() {
                             {assessment.question_blocks?.length || 0}
                           </td>
                           <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                            <Link
-                              to={`/instructor/assessments/${assessment.id}`}
-                              className="text-blue-600 hover:text-blue-900 mr-4"
-                            >
-                              View
-                            </Link>
-                            {!assessment.is_executed && (
-                              <Link
-                                to={`/instructor/assessments/${assessment.id}/edit`}
-                                className="text-green-600 hover:text-green-900 mr-4"
-                              >
-                                Edit
-                              </Link>
+                            {assessment.id ? (
+                              <>
+                                <Link
+                                  to={`/instructor/assessments/${assessment.id}`}
+                                  className="text-blue-600 hover:text-blue-900 mr-4"
+                                  onClick={() => console.log(`🔗 Navigating to assessment ID: ${assessment.id}`)}
+                                >
+                                  View
+                                </Link>
+                                {!assessment.is_executed && (
+                                  <Link
+                                    to={`/instructor/assessments/${assessment.id}/edit`}
+                                    className="text-green-600 hover:text-green-900 mr-4"
+                                    onClick={() => console.log(`🔗 Navigating to edit assessment ID: ${assessment.id}`)}
+                                  >
+                                    Edit
+                                  </Link>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-gray-500">Invalid ID</span>
                             )}
                             <button
                               onClick={() => handleDeleteAssessment(assessment.id, assessment.title)}
@@ -206,7 +218,7 @@ function AssessmentList() {
         {modal.message}
       </Modal>
     </div>
-  )
+  );
 }
 
-export default AssessmentList
+export default AssessmentList;

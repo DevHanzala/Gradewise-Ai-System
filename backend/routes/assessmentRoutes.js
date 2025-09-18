@@ -1,17 +1,31 @@
 import express from "express";
 import multer from "multer";
 import path from "path";
-import { createAssessment, storeQuestionBlocks, getAssessmentsByInstructor, getAssessmentById, updateAssessment, deleteAssessment, clearLinksForAssessment, storeResourceChunk } from "../models/assessmentModel.js";
+import {
+  createAssessment,
+  storeQuestionBlocks,
+  getAssessmentsByInstructor,
+  getAssessmentById,
+  updateAssessment,
+  deleteAssessment,
+  clearLinksForAssessment,
+  storeResourceChunk,
+} from "../models/assessmentModel.js";
 import { protect, authorizeRoles } from "../middleware/authMiddleware.js";
 import { createResource, linkResourceToAssessment } from "../models/resourceModel.js";
 import { extractTextFromFile, chunkText } from "../services/textProcessor.js";
 import { generateEmbedding } from "../services/embeddingGenerator.js";
+import {
+  enrollStudentController,
+  unenrollStudentController,
+  getEnrolledStudentsController,
+} from "../controllers/assessmentController.js";
 
 const router = express.Router();
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, "uploads/assessments/");
+    cb(null, "Uploads/assessments/");
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
@@ -51,9 +65,21 @@ const createAssessmentHandler = async (req, res) => {
       return res.status(400).json({ success: false, message: "Title and prompt are required" });
     }
 
-    let parsedExternalLinks = Array.isArray(externalLinks) ? externalLinks : JSON.parse(externalLinks || "[]");
+    let parsedExternalLinks;
+    try {
+      parsedExternalLinks = Array.isArray(externalLinks)
+        ? externalLinks.filter(link => link && typeof link === "string" && link.trim() !== "")
+        : typeof externalLinks === "string" && externalLinks.trim() !== ""
+          ? JSON.parse(externalLinks).filter(link => link && typeof link === "string" && link.trim() !== "")
+          : [];
+    } catch (error) {
+      console.warn(`⚠️ Failed to parse externalLinks: ${externalLinks}`, error);
+      parsedExternalLinks = [];
+    }
+    console.log(`🔍 Parsed externalLinks:`, parsedExternalLinks);
+
     let parsedQuestionBlocks = Array.isArray(question_blocks) ? question_blocks : JSON.parse(question_blocks || "[]");
-    let parsedSelectedResources = Array.isArray(selected_resources) ? selected_resources : JSON.parse(selected_resources || "[]");
+    let parsedSelectedResources = Array.isArray(selected_resources) ? selected_resources.filter(id => id && !isNaN(parseInt(id))) : JSON.parse(selected_resources || "[]").filter(id => id && !isNaN(parseInt(id)));
 
     if (parsedQuestionBlocks.length > 0) {
       for (const block of parsedQuestionBlocks) {
@@ -92,7 +118,6 @@ const createAssessmentHandler = async (req, res) => {
       };
       const resource = await createResource(resourceData);
 
-      // Extract text, chunk, and generate embeddings
       const text = await extractTextFromFile(file.path, file.mimetype);
       const chunks = chunkText(text, 500);
       for (let i = 0; i < chunks.length; i++) {
@@ -105,8 +130,13 @@ const createAssessmentHandler = async (req, res) => {
       await linkResourceToAssessment(newAssessment.id, resource.id);
     }
 
+    console.log(`🔍 Parsed selected_resources:`, parsedSelectedResources);
     for (const resourceId of parsedSelectedResources) {
-      await linkResourceToAssessment(newAssessment.id, resourceId);
+      if (resourceId && !isNaN(parseInt(resourceId))) {
+        await linkResourceToAssessment(newAssessment.id, parseInt(resourceId));
+      } else {
+        console.warn(`⚠️ Skipping invalid resourceId: ${resourceId}`);
+      }
     }
 
     console.log(`✅ Assessment created: ID=${newAssessment.id}`);
@@ -160,9 +190,13 @@ router.get(
       const user_id = req.user.id;
       const user_role = req.user.role;
 
+      if (!assessment_id || isNaN(parseInt(assessment_id))) {
+        return res.status(400).json({ success: false, message: "Invalid assessment ID" });
+      }
+
       console.log(`🔄 Fetching assessment ${assessment_id} for user ${user_id} (${user_role})`);
 
-      const assessment = await getAssessmentById(assessment_id, user_id, user_role);
+      const assessment = await getAssessmentById(parseInt(assessment_id), user_id, user_role);
 
       if (!assessment) {
         return res.status(404).json({ success: false, message: "Assessment not found or access denied" });
@@ -213,12 +247,14 @@ router.put(
       const assessment_id = req.params.id;
       const user_id = req.user.id;
       const user_role = req.user.role;
-      const { title, prompt, externalLinks = [], question_blocks = [], selected_resources = [] } = req.body;
-      const files = req.files || [];
 
-      console.log(`🔄 Updating assessment ${assessment_id} for user ${user_id} (${user_role})`, { title, prompt, externalLinks, question_blocks, selected_resources, files: files.map(f => f.originalname) });
+      if (!assessment_id || isNaN(parseInt(assessment_id))) {
+        return res.status(400).json({ success: false, message: "Invalid assessment ID" });
+      }
 
-      const assessment = await getAssessmentById(assessment_id, user_id, user_role);
+      console.log(`🔄 Updating assessment ${assessment_id} for user ${user_id} (${user_role})`, { title: req.body.title, prompt: req.body.prompt });
+
+      const assessment = await getAssessmentById(parseInt(assessment_id), user_id, user_role);
       if (!assessment) {
         return res.status(404).json({ success: false, message: "Assessment not found or access denied" });
       }
@@ -227,9 +263,26 @@ router.put(
         return res.status(400).json({ success: false, message: "Cannot update an executed assessment" });
       }
 
-      let parsedExternalLinks = Array.isArray(externalLinks) ? externalLinks : JSON.parse(externalLinks || "[]");
+      const { title, prompt, externalLinks = [], question_blocks = [], selected_resources = [] } = req.body;
+      const files = req.files || [];
+
+      let parsedExternalLinks;
+      try {
+        parsedExternalLinks = Array.isArray(externalLinks)
+          ? externalLinks.filter(link => link && typeof link === "string" && link.trim() !== "")
+          : typeof externalLinks === "string" && externalLinks.trim() !== ""
+            ? JSON.parse(externalLinks).filter(link => link && typeof link === "string" && link.trim() !== "")
+            : [];
+      } catch (error) {
+        console.warn(`⚠️ Failed to parse externalLinks: ${externalLinks}`, error);
+        parsedExternalLinks = [];
+      }
+      console.log(`🔍 Parsed externalLinks:`, parsedExternalLinks);
+
       let parsedQuestionBlocks = Array.isArray(question_blocks) ? question_blocks : JSON.parse(question_blocks || "[]");
-      let parsedSelectedResources = Array.isArray(selected_resources) ? selected_resources : JSON.parse(selected_resources || "[]");
+      let parsedSelectedResources = Array.isArray(selected_resources)
+        ? selected_resources.filter(id => id && !isNaN(parseInt(id)) && id !== "null")
+        : JSON.parse(selected_resources || "[]").filter(id => id && !isNaN(parseInt(id)) && id !== "null");
 
       if (parsedQuestionBlocks.length > 0) {
         for (const block of parsedQuestionBlocks) {
@@ -247,13 +300,13 @@ router.put(
         prompt,
         external_links: parsedExternalLinks,
       };
-      const updatedAssessment = await updateAssessment(assessment_id, updateData);
+      const updatedAssessment = await updateAssessment(parseInt(assessment_id), updateData);
 
-      await clearLinksForAssessment(assessment_id);
+      await clearLinksForAssessment(parseInt(assessment_id));
       if (parsedQuestionBlocks.length > 0) {
-        await storeQuestionBlocks(assessment_id, parsedQuestionBlocks, user_id);
+        await storeQuestionBlocks(parseInt(assessment_id), parsedQuestionBlocks, user_id);
       } else {
-        await storeQuestionBlocks(assessment_id, [], user_id);
+        await storeQuestionBlocks(parseInt(assessment_id), [], user_id);
       }
 
       const uploadedResources = [];
@@ -269,7 +322,6 @@ router.put(
         };
         const resource = await createResource(resourceData);
 
-        // Extract text, chunk, and generate embeddings
         const text = await extractTextFromFile(file.path, file.mimetype);
         const chunks = chunkText(text, 500);
         for (let i = 0; i < chunks.length; i++) {
@@ -279,11 +331,16 @@ router.put(
         }
 
         uploadedResources.push(resource.id);
-        await linkResourceToAssessment(assessment_id, resource.id);
+        await linkResourceToAssessment(parseInt(assessment_id), resource.id);
       }
 
+      console.log(`🔍 Parsed selected_resources:`, parsedSelectedResources);
       for (const resourceId of parsedSelectedResources) {
-        await linkResourceToAssessment(assessment_id, resourceId);
+        if (resourceId && !isNaN(parseInt(resourceId)) && resourceId !== "null") {
+          await linkResourceToAssessment(parseInt(assessment_id), parseInt(resourceId));
+        } else {
+          console.warn(`⚠️ Skipping invalid resourceId: ${resourceId}`);
+        }
       }
 
       console.log(`✅ Assessment updated: ID=${assessment_id}`);
@@ -313,14 +370,18 @@ router.delete(
       const user_id = req.user.id;
       const user_role = req.user.role;
 
+      if (!assessment_id || isNaN(parseInt(assessment_id))) {
+        return res.status(400).json({ success: false, message: "Invalid assessment ID" });
+      }
+
       console.log(`🔄 Deleting assessment ${assessment_id} for user ${user_id} (${user_role})`);
 
-      const assessment = await getAssessmentById(assessment_id, user_id, user_role);
+      const assessment = await getAssessmentById(parseInt(assessment_id), user_id, user_role);
       if (!assessment) {
         return res.status(404).json({ success: false, message: "Assessment not found or access denied" });
       }
 
-      const deleted = await deleteAssessment(assessment_id);
+      const deleted = await deleteAssessment(parseInt(assessment_id));
       if (deleted) {
         console.log(`✅ Assessment deleted: ID=${assessment_id}`);
         res.status(200).json({
@@ -342,6 +403,27 @@ router.delete(
       });
     }
   }
+);
+
+router.post(
+  "/:assessmentId/enroll",
+  protect,
+  authorizeRoles(["instructor", "admin", "super_admin"]),
+  enrollStudentController
+);
+
+router.delete(
+  "/:assessmentId/unenroll/:studentId",
+  protect,
+  authorizeRoles(["instructor", "admin", "super_admin"]),
+  unenrollStudentController
+);
+
+router.get(
+  "/:assessmentId/students",
+  protect,
+  authorizeRoles(["instructor", "admin", "super_admin"]),
+  getEnrolledStudentsController
 );
 
 export default router;

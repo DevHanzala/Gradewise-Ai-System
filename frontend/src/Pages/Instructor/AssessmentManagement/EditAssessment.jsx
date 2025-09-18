@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import  { useState, useEffect } from "react";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import useAssessmentStore from "../../../store/assessmentStore.js";
 import useResourceStore from "../../../store/resourceStore.js";
 import { Card, CardHeader, CardContent } from "../../../components/ui/Card";
@@ -9,9 +9,10 @@ import Navbar from "../../../components/Navbar";
 import Footer from "../../../components/Footer";
 import toast from "react-hot-toast";
 
-function EditAssessment() { 
-  const { assessmentId } = useParams();
+function EditAssessment() {
+  const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { currentAssessment, loading, error, getAssessmentById, updateAssessment } = useAssessmentStore();
   const { resources, fetchResources, loading: resourcesLoading } = useResourceStore();
   const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" });
@@ -19,7 +20,7 @@ function EditAssessment() {
   const [formData, setFormData] = useState({
     title: "",
     prompt: "",
-    externalLinks: [""],
+    externalLinks: [],
   });
 
   const [questionBlocks, setQuestionBlocks] = useState([
@@ -33,37 +34,59 @@ function EditAssessment() {
   const [newFiles, setNewFiles] = useState([]);
 
   useEffect(() => {
-    // Fetch assessment and resources
+    console.log(`🔍 EditAssessment: id from useParams = "${id}", pathname = "${location.pathname}"`);
     const fetchData = async () => {
       try {
+        if (!id || isNaN(parseInt(id))) {
+          console.warn(`⚠️ Invalid assessment ID: "${id}" at ${location.pathname}`);
+          setModal({
+            isOpen: true,
+            type: "error",
+            title: "Invalid Assessment",
+            message: "The assessment ID is invalid. Redirecting to assessments list.",
+          });
+          toast.error("Invalid assessment ID");
+          navigate("/instructor/assessments");
+          return;
+        }
         await fetchResources();
-        await getAssessmentById(assessmentId);
+        await getAssessmentById(parseInt(id));
       } catch (err) {
+        console.error("❌ Error fetching assessment or resources:", err);
         const errorMessage = err.response?.data?.message || err.message || "Failed to fetch assessment or resources";
         setModal({ isOpen: true, type: "error", title: "Error", message: errorMessage });
         toast.error(errorMessage);
         if (err.response?.status === 403 || err.message === "No authentication token found") {
           setTimeout(() => navigate("/login"), 2000);
-        } else if (err.response?.status === 404) {
+        } else if (err.response?.status === 404 || err.message === "Invalid assessment ID") {
           navigate("/instructor/assessments");
         }
       }
     };
     fetchData();
-  }, [assessmentId, getAssessmentById, fetchResources, navigate]);
+  }, [id, getAssessmentById, fetchResources, navigate, location.pathname]);
 
   useEffect(() => {
-    // Populate form with currentAssessment data
     if (currentAssessment) {
       setFormData({
         title: currentAssessment.title || "",
         prompt: currentAssessment.prompt || "",
-        externalLinks: currentAssessment.external_links?.length > 0 ? currentAssessment.external_links : [""],
+        externalLinks: Array.isArray(currentAssessment.external_links) ? currentAssessment.external_links : [],
       });
-      setQuestionBlocks(currentAssessment.question_blocks?.length > 0 ? currentAssessment.question_blocks : [
-        { question_type: "multiple_choice", question_count: 1 }
-      ]);
-      setSelectedResources(currentAssessment.resources?.map(r => r.id) || []);
+      setQuestionBlocks(
+        Array.isArray(currentAssessment.question_blocks) && currentAssessment.question_blocks.length > 0
+          ? currentAssessment.question_blocks.map(block => ({
+              question_type: block.question_type || "multiple_choice",
+              question_count: Number(block.question_count) || 1,
+            }))
+          : [{ question_type: "multiple_choice", question_count: 1 }]
+      );
+      setSelectedResources(
+        Array.isArray(currentAssessment.resources)
+          ? currentAssessment.resources.map(r => r.id).filter(id => id && !isNaN(id))
+          : []
+      );
+      console.log(`🔍 Loaded selectedResources:`, currentAssessment.resources?.map(r => r.id));
     }
   }, [currentAssessment]);
 
@@ -77,7 +100,7 @@ function EditAssessment() {
 
   const handleBlockChange = (index, field, value) => {
     setQuestionBlocks((prev) =>
-      prev.map((block, i) => (i === index ? { ...block, [field]: value } : block))
+      prev.map((block, i) => (i === index ? { ...block, [field]: field === "question_count" ? Number.parseInt(value) : value } : block))
     );
   };
 
@@ -119,6 +142,7 @@ function EditAssessment() {
   };
 
   const handleResourceSelection = (resourceId) => {
+    if (!resourceId || isNaN(resourceId)) return;
     setSelectedResources((prev) =>
       prev.includes(resourceId) ? prev.filter((id) => id !== resourceId) : [...prev, resourceId]
     );
@@ -141,7 +165,6 @@ function EditAssessment() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Validation
     if (!formData.title.trim()) {
       showModal("error", "Validation Error", "Assessment title is required.");
       return;
@@ -152,8 +175,8 @@ function EditAssessment() {
       return;
     }
 
-    if (questionBlocks.length === 0 || questionBlocks.some((block) => block.question_count < 1)) {
-      showModal("error", "Validation Error", "At least one valid question block is required.");
+    if (questionBlocks.length === 0 || questionBlocks.some((block) => block.question_count < 1 || !block.question_type)) {
+      showModal("error", "Validation Error", "At least one valid question block with a valid type and count is required.");
       return;
     }
 
@@ -162,22 +185,35 @@ function EditAssessment() {
       return;
     }
 
+    const validExternalLinks = formData.externalLinks.filter(link => link.trim() !== "");
+    const urlPattern = /^(https?:\/\/)?([\w-]+\.)+[\w-]+(\/[\w-./?%&=]*)?$/;
+    const invalidLinks = validExternalLinks.filter(link => !urlPattern.test(link));
+    if (invalidLinks.length > 0) {
+      showModal("error", "Validation Error", `Invalid URLs: ${invalidLinks.join(", ")}`);
+      return;
+    }
+
+    const validSelectedResources = selectedResources.filter(id => id && !isNaN(id));
+    console.log("📝 Submitting selectedResources:", validSelectedResources);
+
     try {
       const assessmentData = {
-        ...formData,
+        title: formData.title,
+        prompt: formData.prompt,
+        externalLinks: validExternalLinks,
         question_blocks: questionBlocks,
-        selected_resources: selectedResources,
+        selected_resources: validSelectedResources,
         new_files: newFiles,
       };
 
       console.log("📝 Submitting updated assessment data:", assessmentData);
 
-      const updatedAssessment = await updateAssessment(assessmentId, assessmentData);
+      const updatedAssessment = await updateAssessment(parseInt(id), assessmentData);
 
       if (updatedAssessment) {
         showModal("success", "Success", "Assessment updated successfully! Redirecting to assessment detail...");
         setTimeout(() => {
-          navigate(`/instructor/assessments/${assessmentId}`);
+          navigate(`/instructor/assessments/${id}`);
         }, 2000);
       }
     } catch (error) {
@@ -236,7 +272,6 @@ function EditAssessment() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-8">
-          {/* Basic Information */}
           <Card>
             <CardHeader>
               <h2 className="text-xl font-semibold text-gray-900">Basic Information</h2>
@@ -276,7 +311,6 @@ function EditAssessment() {
                 />
               </div>
 
-              {/* External Links */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   External Links
@@ -287,7 +321,7 @@ function EditAssessment() {
                       <input
                         type="url"
                         placeholder="https://example.com/resource"
-                        value={link}
+                        value={link || ""}
                         onChange={(e) => handleExternalLinkChange(index, e.target.value)}
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         disabled={currentAssessment.is_executed}
@@ -313,7 +347,6 @@ function EditAssessment() {
                 </div>
               </div>
 
-              {/* Existing Resources Selection */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Select Existing Resources
@@ -334,14 +367,13 @@ function EditAssessment() {
                           className="mr-2"
                           disabled={currentAssessment.is_executed}
                         />
-                        <label htmlFor={`resource-${resource.id}`}>{resource.name} ({resource.type})</label>
+                        <label htmlFor={`resource-${resource.id}`}>{resource.name} ({resource.file_type})</label>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
 
-              {/* New File Uploads */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Upload New Documents (PDF, PPT, TXT, DOC, etc.)
@@ -378,7 +410,6 @@ function EditAssessment() {
             </CardContent>
           </Card>
 
-          {/* Question Blocks */}
           <Card>
             <CardHeader>
               <div className="flex justify-between items-center">
@@ -414,14 +445,14 @@ function EditAssessment() {
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Question Type</label>
                       <select
-                        value={block.question_type}
+                        value={block.question_type || "multiple_choice"}
                         onChange={(e) => handleBlockChange(index, "question_type", e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         disabled={currentAssessment.is_executed}
                       >
-                        <option value="short_answer">Short Answer</option>
-                        <option value="true_false">True/False</option>
                         <option value="multiple_choice">MCQs</option>
+                        <option value="true_false">True/False</option>
+                        <option value="short_answer">Short Answer</option>
                         <option value="matching">Match the Columns</option>
                       </select>
                     </div>
@@ -430,7 +461,7 @@ function EditAssessment() {
                       <label className="block text-sm font-medium text-gray-700 mb-2">Question Count</label>
                       <input
                         type="number"
-                        value={block.question_count}
+                        value={block.question_count || 1}
                         onChange={(e) => handleBlockChange(index, "question_count", Number.parseInt(e.target.value))}
                         min="1"
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -443,11 +474,10 @@ function EditAssessment() {
             </CardContent>
           </Card>
 
-          {/* Submit Button */}
           <div className="flex justify-end space-x-4">
             <button
               type="button"
-              onClick={() => navigate(`/instructor/assessments/${assessmentId}`)}
+              onClick={() => navigate(`/instructor/assessments/${id}`)}
               className="px-6 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition duration-200"
             >
               Cancel

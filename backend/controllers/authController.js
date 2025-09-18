@@ -30,28 +30,27 @@ export const signup = async (req, res) => {
   const { name, email, password } = req.body;
 
   try {
-    console.log(`🔄 Starting signup process for: ${email}`);
+    console.log(`🔍 Starting signup process for: ${email}`);
 
     const existingUser = await findUserByEmail(email);
     if (existingUser) {
-      console.log(`❌ User already exists: ${email}`);
-      return res.status(400).json({ message: "User with this email already exists." });
+      console.warn(`⚠️ User already exists: ${email}`);
+      return res.status(400).json({ success: false, message: "User with this email already exists." });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
     console.log(`✅ Password hashed for: ${email}`);
 
     const verificationToken = crypto.randomBytes(32).toString("hex");
-    console.log(`✅ Generated verification token for ${email}: ${verificationToken}`);
+    console.log(`✅ Generated verification token for ${email}: ${verificationToken.slice(0, 10)}...`);
 
     const newUser = await createUser(name, email, hashedPassword, "student", verificationToken, "manual", null);
-    console.log(`✅ User created in database:`, {
+    console.log(`✅ User created:`, {
       id: newUser.id,
       email: newUser.email,
       role: newUser.role,
       verified: newUser.verified,
       provider: newUser.provider,
-      hasToken: !!verificationToken,
     });
 
     try {
@@ -60,6 +59,7 @@ export const signup = async (req, res) => {
     } catch (emailError) {
       console.error("❌ Failed to send verification email:", emailError);
       return res.status(201).json({
+        success: true,
         message: "User registered successfully, but verification email could not be sent. Please contact support.",
         user: {
           id: newUser.id,
@@ -73,6 +73,7 @@ export const signup = async (req, res) => {
     }
 
     res.status(201).json({
+      success: true,
       message: "User registered successfully. Please check your email to verify your account.",
       user: {
         id: newUser.id,
@@ -84,8 +85,8 @@ export const signup = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("❌ Signup error:", error);
-    res.status(500).json({ message: "Server error during signup." });
+    console.error("❌ Signup error:", error.message, error.stack);
+    res.status(500).json({ success: false, message: "Server error during signup." });
   }
 };
 
@@ -96,7 +97,7 @@ export const googleAuth = async (req, res) => {
   const { name, email, uid } = req.body;
 
   try {
-    console.log(`🔄 Starting Google auth process for: ${email}`);
+    console.log(`🔍 Starting Google auth process for: ${email}`);
 
     let user = await findUserByEmail(email);
 
@@ -112,8 +113,9 @@ export const googleAuth = async (req, res) => {
     } else {
       const userByUID = await findUserByUID(uid);
       if (userByUID) {
-        console.log(`⚠️ User found by UID but different email: ${email}`);
+        console.warn(`⚠️ User found by UID but different email: ${email}`);
         return res.status(400).json({
+          success: false,
           message: "This Google account is already linked to a different email address.",
         });
       }
@@ -130,10 +132,10 @@ export const googleAuth = async (req, res) => {
     }
 
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: "24h" });
-
-    console.log(`✅ Google auth successful for: ${email}`);
+    console.log(`✅ Generated token for Google auth: ${email}`);
 
     res.status(200).json({
+      success: true,
       message: "Google authentication successful",
       user: {
         id: user.id,
@@ -146,8 +148,8 @@ export const googleAuth = async (req, res) => {
       token,
     });
   } catch (error) {
-    console.error("❌ Google auth error:", error);
-    res.status(500).json({ message: "Server error during Google authentication." });
+    console.error("❌ Google auth error:", error.message, error.stack);
+    res.status(500).json({ success: false, message: "Server error during Google authentication." });
   }
 };
 
@@ -158,36 +160,37 @@ export const login = async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    console.log(`🔄 Login attempt for: ${email}`);
+    console.log(`🔍 Login attempt for: ${email}`);
 
     const user = await findUserByEmail(email);
     if (!user) {
-      console.log(`❌ User not found: ${email}`);
-      return res.status(400).json({ message: "Invalid credentials." });
+      console.warn(`⚠️ User not found: ${email}`);
+      return res.status(400).json({ success: false, message: "Invalid credentials." });
     }
 
     console.log(`✅ User found: ${email}, verified: ${user.verified}, provider: ${user.provider}`);
 
     if (user.provider === "google") {
-      return res.status(400).json({ message: "Please use Google Sign-In for this account." });
+      console.warn(`⚠️ Google account detected: ${email}`);
+      return res.status(400).json({ success: false, message: "Please use Google Sign-In for this account." });
     }
 
     if (!user.verified && user.role !== "super_admin") {
-      console.log(`❌ User not verified: ${email}`);
-      return res.status(400).json({ message: "Please verify your email before logging in." });
+      console.warn(`⚠️ User not verified: ${email}`);
+      return res.status(400).json({ success: false, message: "Please verify your email before logging in." });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      console.log(`❌ Invalid password for: ${email}`);
-      return res.status(400).json({ message: "Invalid credentials." });
+      console.warn(`⚠️ Invalid password for: ${email}`);
+      return res.status(400).json({ success: false, message: "Invalid credentials." });
     }
 
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: "24h" });
-
-    console.log(`✅ Login successful for: ${email}`);
+    console.log(`✅ Generated token for login: ${email}`);
 
     res.status(200).json({
+      success: true,
       message: "Logged in successfully",
       user: {
         id: user.id,
@@ -200,8 +203,8 @@ export const login = async (req, res) => {
       token,
     });
   } catch (error) {
-    console.error("❌ Login error:", error);
-    res.status(500).json({ message: "Server error during login." });
+    console.error("❌ Login error:", error.message, error.stack);
+    res.status(500).json({ success: false, message: "Server error during login." });
   }
 };
 
@@ -210,7 +213,7 @@ export const login = async (req, res) => {
  */
 export const verifyEmail = async (req, res) => {
   const { token } = req.params;
-  console.log(`🔄 Attempting to verify token: ${token}`);
+  console.log(`🔍 Attempting to verify token: ${token.slice(0, 10)}...`);
 
   try {
     const user = await findUserByVerificationToken(token);
@@ -263,14 +266,14 @@ export const verifyEmail = async (req, res) => {
       });
     }
 
-    console.log(`❌ Invalid token: ${token}`);
+    console.warn(`⚠️ Invalid token: ${token.slice(0, 10)}...`);
     return res.status(400).json({
       success: false,
       message: "Invalid or expired verification token. Please request a new verification email.",
       status: "invalid_token",
     });
   } catch (error) {
-    console.error("❌ Email verification error:", error);
+    console.error("❌ Email verification error:", error.message, error.stack);
     res.status(500).json({
       success: false,
       message: "Server error during email verification.",
@@ -287,35 +290,47 @@ export const forgotPassword = async (req, res) => {
   const { email } = req.body;
 
   try {
+    console.log(`🔍 Forgot password request for: ${email}`);
     const user = await findUserByEmail(email);
     if (!user) {
-      return res
-        .status(200)
-        .json({ message: "If an account with that email exists, a password reset link has been sent." });
+      console.warn(`⚠️ User not found: ${email}`);
+      return res.status(200).json({
+        success: true,
+        message: "If an account with that email exists, a password reset link has been sent.",
+      });
     }
 
     if (user.provider === "google") {
-      return res.status(400).json({ message: "Google users cannot reset password. Please use Google Sign-In." });
+      console.warn(`⚠️ Google account detected: ${email}`);
+      return res.status(400).json({
+        success: false,
+        message: "Google users cannot reset password. Please use Google Sign-In.",
+      });
     }
 
-    // Generate a unique reset identifier
     const resetId = crypto.randomBytes(16).toString("hex");
     const expiresAt = new Date(Date.now() + 3600000); // 1 hour expiration
     await updateResetToken(email, resetId, expiresAt);
+    console.log(`✅ Generated reset token for: ${email}`);
 
-    // Send email with a link to /reset-password/:resetId
     try {
       await sendPasswordResetEmail(email, user.name, resetId);
       console.log(`✅ Password reset email sent to ${email}`);
     } catch (emailError) {
       console.error("❌ Failed to send password reset email:", emailError);
-      return res.status(500).json({ message: "Failed to send password reset email. Please try again or contact support." });
+      return res.status(500).json({
+        success: false,
+        message: "Failed to send password reset email. Please try again or contact support.",
+      });
     }
 
-    res.status(200).json({ message: "If an account with that email exists, a password reset link has been sent." });
+    res.status(200).json({
+      success: true,
+      message: "If an account with that email exists, a password reset link has been sent.",
+    });
   } catch (error) {
-    console.error("❌ Forgot password error:", error);
-    res.status(500).json({ message: "Server error during password reset request." });
+    console.error("❌ Forgot password error:", error.message, error.stack);
+    res.status(500).json({ success: false, message: "Server error during password reset request." });
   }
 };
 
@@ -327,49 +342,58 @@ export const changePassword = async (req, res) => {
   const { currentPassword, newPassword, resetId } = req.body;
 
   try {
+    console.log(`🔍 Changing password`, { resetId: !!resetId });
+
     let user;
 
-    // Case 1: Logged-in user changing password
     if (currentPassword && !resetId) {
       if (!req.user) {
-        return res.status(401).json({ message: "Authentication required for password change." });
+        console.warn(`⚠️ Authentication required for password change`);
+        return res.status(401).json({ success: false, message: "Authentication required for password change." });
       }
       user = await findUserByEmail(req.user.email);
       if (!user) {
-        return res.status(404).json({ message: "User not found." });
+        console.warn(`⚠️ User not found: ${req.user.email}`);
+        return res.status(404).json({ success: false, message: "User not found." });
       }
       const isValid = await bcrypt.compare(currentPassword, user.password);
       if (!isValid) {
-        return res.status(400).json({ message: "Current password is incorrect." });
+        console.warn(`⚠️ Invalid current password for: ${user.email}`);
+        return res.status(400).json({ success: false, message: "Current password is incorrect." });
       }
-    }
-    // Case 2: Reset flow (after forgot password email)
-    else if (resetId && !currentPassword) {
+    } else if (resetId && !currentPassword) {
       const resetData = await findUserByResetToken(resetId);
       if (!resetData || new Date() > resetData.reset_token_expires) {
-        return res.status(400).json({ message: "Invalid or expired reset link." });
+        console.warn(`⚠️ Invalid or expired reset token: ${resetId.slice(0, 10)}...`);
+        return res.status(400).json({ success: false, message: "Invalid or expired reset link." });
       }
       user = resetData;
     } else {
-      return res.status(400).json({ message: "Invalid request. Provide current password or reset ID." });
+      console.warn(`⚠️ Invalid request: currentPassword=${!!currentPassword}, resetId=${!!resetId}`);
+      return res.status(400).json({
+        success: false,
+        message: "Invalid request. Provide current password or reset ID.",
+      });
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     const updatedUser = await updatePasswordById(user.id, hashedPassword);
 
     if (!updatedUser) {
-      return res.status(500).json({ message: "Failed to update password." });
+      console.error(`❌ Failed to update password for: ${user.email}`);
+      return res.status(500).json({ success: false, message: "Failed to update password." });
     }
 
-    // Clear reset token after successful reset
     if (resetId) {
       await updateResetToken(user.email, null, null);
+      console.log(`✅ Cleared reset token for: ${user.email}`);
     }
 
-    res.status(200).json({ message: "Password changed successfully." });
+    console.log(`✅ Password changed for: ${user.email}`);
+    res.status(200).json({ success: true, message: "Password changed successfully." });
   } catch (error) {
-    console.error("❌ Change password error:", error);
-    res.status(500).json({ message: "Server error during password change." });
+    console.error("❌ Change password error:", error.message, error.stack);
+    res.status(500).json({ success: false, message: "Server error during password change." });
   }
 };
 
@@ -378,11 +402,13 @@ export const changePassword = async (req, res) => {
  */
 export const getUsers = async (req, res) => {
   try {
+    console.log(`🔍 Fetching users for: ${req.user.email} (${req.user.role})`);
     const users = await getAllUsers(req.user.role);
-    res.status(200).json({ users });
+    console.log(`✅ Fetched ${users.length} users`);
+    res.status(200).json({ success: true, message: "Users retrieved successfully", users });
   } catch (error) {
-    console.error("Get users error:", error);
-    res.status(500).json({ message: "Server error while fetching users." });
+    console.error("❌ Get users error:", error.message, error.stack);
+    res.status(500).json({ success: false, message: "Server error while fetching users." });
   }
 };
 
@@ -393,13 +419,14 @@ export const changeUserRole = async (req, res) => {
   const { userId, newRole, userEmail } = req.body;
 
   try {
-    console.log(`🔄 Role change request: User ${userId} to ${newRole} by ${req.user.role}`);
+    console.log(`🔍 Role change request: User ${userId} to ${newRole} by ${req.user.email} (${req.user.role})`);
 
     const userToChange =
       (await findUserByEmail(userEmail)) || (await getAllUsers(req.user.role)).find((u) => u.id === userId);
 
     if (!userToChange) {
-      return res.status(404).json({ message: "User not found." });
+      console.warn(`⚠️ User not found: ID=${userId}, Email=${userEmail}`);
+      return res.status(404).json({ success: false, message: "User not found." });
     }
 
     const oldRole = userToChange.role;
@@ -407,7 +434,8 @@ export const changeUserRole = async (req, res) => {
 
     const updatedUser = await updateUserRole(userId, newRole, req.user.role);
     if (!updatedUser) {
-      return res.status(404).json({ message: "User not found." });
+      console.warn(`⚠️ Failed to update role for: ${userToChange.email}`);
+      return res.status(404).json({ success: false, message: "User not found." });
     }
 
     console.log(`✅ Role changed successfully: ${userToChange.name} is now ${newRole}`);
@@ -422,16 +450,17 @@ export const changeUserRole = async (req, res) => {
       );
       console.log(`✅ Role change email sent to ${updatedUser.email}`);
     } catch (emailError) {
-      console.error("Failed to send role change email:", emailError);
+      console.error("❌ Failed to send role change email:", emailError);
     }
 
     res.status(200).json({
+      success: true,
       message: "User role updated successfully.",
       user: updatedUser,
     });
   } catch (error) {
-    console.error("Change user role error:", error);
-    res.status(400).json({ message: error.message || "Server error while updating user role." });
+    console.error("❌ Change user role error:", error.message, error.stack);
+    res.status(400).json({ success: false, message: error.message || "Server error while updating user role." });
   }
 };
 
@@ -442,19 +471,25 @@ export const removeUser = async (req, res) => {
   const { userId } = req.params;
 
   try {
-    console.log(`🔄 Delete user request: User ${userId} by ${req.user.role}`);
+    console.log(`🔍 Delete user request: User ${userId} by ${req.user.email} (${req.user.role})`);
 
     const deletedUser = await deleteUser(Number.parseInt(userId), req.user.role);
+
+    if (!deletedUser) {
+      console.warn(`⚠️ User not found: ID=${userId}`);
+      return res.status(404).json({ success: false, message: "User not found." });
+    }
 
     console.log(`✅ User deleted successfully: ${deletedUser.name}`);
 
     res.status(200).json({
+      success: true,
       message: "User deleted successfully.",
       user: deletedUser,
     });
   } catch (error) {
-    console.error("Delete user error:", error);
-    res.status(400).json({ message: error.message || "Server error while deleting user." });
+    console.error("❌ Delete user error:", error.message, error.stack);
+    res.status(400).json({ success: false, message: error.message || "Server error while deleting user." });
   }
 };
 
@@ -462,31 +497,96 @@ export const removeUser = async (req, res) => {
  * Registers a student (Admin/Instructor only).
  */
 export const registerStudent = async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, email, password, roles } = req.body;
 
   try {
+    console.log(`🔍 Registering student by ${req.user.email} (${req.user.role}):`, {
+      name,
+      email,
+      reqBody: JSON.stringify(req.body),
+    });
+
+    // Explicitly reject roles field if present
+    if (roles !== undefined) {
+      console.error(`❌ Invalid field 'roles' detected in request body: ${JSON.stringify(roles)}`);
+      return res.status(400).json({
+        success: false,
+        message: "Invalid field 'roles'. Use 'role' as a string or omit it (defaults to 'student').",
+      });
+    }
+
     if (!["admin", "instructor", "super_admin"].includes(req.user.role)) {
-      return res.status(403).json({ message: "Only admins and instructors can register students." });
+      console.warn(`⚠️ Unauthorized role: ${req.user.role}`);
+      return res.status(403).json({
+        success: false,
+        message: "Only admins, instructors, or super admins can register students.",
+      });
+    }
+
+    if (!name || !email || !password) {
+      console.warn(`⚠️ Missing required fields: name=${name}, email=${email}, password=${!!password}`);
+      return res.status(400).json({ success: false, message: "Name, email, and password are required." });
+    }
+
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailPattern.test(email)) {
+      console.warn(`⚠️ Invalid email format: ${email}`);
+      return res.status(400).json({ success: false, message: "Invalid email format." });
     }
 
     const existingUser = await findUserByEmail(email);
     if (existingUser) {
-      return res.status(400).json({ message: "User with this email already exists." });
+      console.warn(`⚠️ User already exists: ${email}`);
+      return res.status(400).json({ success: false, message: "User with this email already exists." });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
+    console.log(`✅ Password hashed for: ${email}`);
 
     const verificationToken = crypto.randomBytes(32).toString("hex");
+    console.log(`✅ Generated verification token for ${email}: ${verificationToken.slice(0, 10)}...`);
 
-    const newUser = await createUser(name, email, hashedPassword, "student", verificationToken, "manual", null);
+    // Explicitly set role as string
+    const role = "student";
+    console.log(`🔍 Passing to createUser:`, { name, email, role, verificationToken, provider: "manual" });
+
+    const newUser = await createUser(name, email, hashedPassword, role, verificationToken, "manual", null);
+    console.log(`✅ Student created:`, {
+      id: newUser.id,
+      email: newUser.email,
+      role: newUser.role,
+      verified: newUser.verified,
+      provider: newUser.provider,
+    });
+
+    // Generate JWT token
+    const token = jwt.sign({ id: newUser.id, email: newUser.email, role: newUser.role }, JWT_SECRET, {
+      expiresIn: "24h",
+    });
+    console.log(`✅ Generated token for student: ${email}`);
 
     try {
       await sendVerificationEmail(email, name, verificationToken);
+      console.log(`✅ Verification email sent to ${email}`);
     } catch (emailError) {
-      console.error("Failed to send verification email:", emailError);
+      console.error("❌ Failed to send verification email:", emailError);
+      return res.status(201).json({
+        success: true,
+        message: "Student registered successfully, but verification email could not be sent. Please contact support.",
+        user: {
+          id: newUser.id,
+          name: newUser.name,
+          email: newUser.email,
+          role: newUser.role,
+          verified: newUser.verified,
+          provider: newUser.provider,
+        },
+        token,
+      });
     }
 
     res.status(201).json({
+      success: true,
       message: "Student registered successfully. Verification email sent.",
       user: {
         id: newUser.id,
@@ -496,9 +596,10 @@ export const registerStudent = async (req, res) => {
         verified: newUser.verified,
         provider: newUser.provider,
       },
+      token,
     });
   } catch (error) {
-    console.error("Register student error:", error);
-    res.status(500).json({ message: "Server error during student registration." });
+    console.error("❌ Register student error:", error.message, error.stack);
+    res.status(500).json({ success: false, message: error.message || "Server error during student registration." });
   }
 };

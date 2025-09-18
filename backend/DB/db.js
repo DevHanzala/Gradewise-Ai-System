@@ -1,6 +1,6 @@
 import { Pool } from "pg";
 import dotenv from "dotenv";
-import { ensureAssessmentsTable } from "../models/assessmentModel.js";
+import { ensureAssessmentsTable, ensureEnrollmentsTable } from "../models/assessmentModel.js"; // Add ensureEnrollmentsTable
 import { ensureResourcesTable, ensureResourceChunksTable } from "../models/resourceModel.js";
 
 // Load environment variables
@@ -27,10 +27,11 @@ export const connectDB = async () => {
     console.log("✅ Connected to PostgreSQL database successfully!");
     client.release();
 
-    // Ensure tables in correct order: resources, resource_chunks, assessments
+    // Ensure tables in correct order: resources, resource_chunks, assessments, enrollments
     await ensureResourcesTable();
     await ensureResourceChunksTable();
     await ensureAssessmentsTable();
+    await ensureEnrollmentsTable(); // Added to create enrollments table
   } catch (error) {
     console.error("❌ Database connection error:", error);
     throw error;

@@ -116,7 +116,7 @@ function App() {
             }
           />
           <Route
-            path="/instructor/assessments/:assessmentId"
+            path="/instructor/assessments/:id"
             element={
               <ProtectedRoute requiredRole="instructor">
                 <AssessmentDetail />
@@ -124,7 +124,7 @@ function App() {
             }
           />
           <Route
-            path="/instructor/assessments/:assessmentId/edit"
+            path="/instructor/assessments/:id/edit"
             element={
               <ProtectedRoute requiredRole="instructor">
                 <EditAssessment />

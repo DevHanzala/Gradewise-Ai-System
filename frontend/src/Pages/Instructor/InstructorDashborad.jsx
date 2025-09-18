@@ -69,6 +69,13 @@ function InstructorDashboard() {
       link: "/instructor/assessments",
       color: "bg-purple-500 hover:bg-purple-600",
     },
+    {
+      title: "Add New Student",
+      description: "Register a new student",
+      icon: "👩‍🎓",
+      link: "/instructor/students",
+      color: "bg-yellow-500 hover:bg-yellow-600",
+    },
   ];
 
   return (
@@ -116,7 +123,7 @@ function InstructorDashboard() {
                 <h2 className="text-xl font-semibold text-gray-900">Quick Actions</h2>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   {quickActions.map((action, index) => (
                     <Link
                       key={index}
@@ -175,7 +182,7 @@ function InstructorDashboard() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200 bg-white">
-                        {assessments.slice(0, 5).map((assessment) => (
+                        {assessments.filter(assessment => assessment && assessment.id).slice(0, 5).map((assessment) => (
                           <tr key={assessment.id}>
                             <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
                               {assessment.title}
@@ -186,9 +193,17 @@ function InstructorDashboard() {
                             <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
                               <Link
                                 to={`/instructor/assessments/${assessment.id}`}
-                                className="text-blue-600 hover:text-blue-900"
+                                className="text-blue-600 hover:text-blue-900 mr-4"
+                                onClick={() => console.log(`🔗 Navigating to assessment ID: ${assessment.id}`)}
                               >
                                 View
+                              </Link>
+                              <Link
+                                to={`/instructor/assessments/${assessment.id}/enroll`}
+                                className="text-green-600 hover:text-green-900"
+                                onClick={() => console.log(`🔗 Navigating to enroll for assessment ID: ${assessment.id}`)}
+                              >
+                                Enroll
                               </Link>
                             </td>
                           </tr>

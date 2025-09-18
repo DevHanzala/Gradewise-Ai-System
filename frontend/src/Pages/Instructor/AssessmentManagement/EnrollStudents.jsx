@@ -1,152 +1,142 @@
 import { useState, useEffect } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import useAssessmentStore from "../../../store/assessmentStore.js";
 import { Card, CardHeader, CardContent } from "../../../components/ui/Card";
 import LoadingSpinner from "../../../components/ui/LoadingSpinner";
 import Modal from "../../../components/ui/Modal";
 import Navbar from "../../../components/Navbar";
 import Footer from "../../../components/Footer";
+import AddStudent from "../AddStudent.jsx";
 import toast from "react-hot-toast";
 
 function EnrollStudents() {
   const { assessmentId } = useParams();
-  const { enrolledStudents, loading, getEnrolledStudents, enrollStudent, enrollStudentsByEmail, unenrollStudent } = useAssessmentStore();
-  const [singleEmail, setSingleEmail] = useState("");
-  const [bulkEmails, setBulkEmails] = useState("");
+  const navigate = useNavigate();
+  const { getEnrolledStudents, unenrollStudent, enrolledStudents, loading } = useAssessmentStore();
   const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" });
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    getEnrolledStudents(assessmentId);
+    const fetchEnrolledStudents = async () => {
+      setIsLoading(true);
+      try {
+        await getEnrolledStudents(assessmentId);
+      } catch (error) {
+        console.error("❌ Failed to fetch enrolled students:", error);
+        showModal("error", "Error", error.message || "Failed to fetch enrolled students");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchEnrolledStudents();
   }, [assessmentId, getEnrolledStudents]);
 
-  const handleSingleEnroll = async (e) => {
-    e.preventDefault();
-    if (!singleEmail.trim()) {
-      toast.error("Enter an email");
-      return;
-    }
-    try {
-      await enrollStudent(assessmentId, singleEmail);
-      toast.success("Student enrolled");
-      setSingleEmail("");
-      getEnrolledStudents(assessmentId);
-    } catch (error) {
-      toast.error(error.message || "Failed to enroll student");
-    }
-  };
-
-  const handleBulkEnroll = async (e) => {
-    e.preventDefault();
-    const emails = bulkEmails.split("\n").map((email) => email.trim()).filter(Boolean);
-    if (emails.length === 0) {
-      toast.error("Enter at least one email");
-      return;
-    }
-    try {
-      await enrollStudentsByEmail(assessmentId, emails);
-      toast.success(`${emails.length} students enrolled`);
-      setBulkEmails("");
-      getEnrolledStudents(assessmentId);
-    } catch (error) {
-      toast.error(error.message || "Failed to enroll students");
-    }
-  };
-
   const handleUnenroll = async (studentId) => {
-    if (window.confirm("Unenroll this student?")) {
-      try {
-        await unenrollStudent(assessmentId, studentId);
-        toast.success("Student unenrolled");
-        getEnrolledStudents(assessmentId);
-      } catch (error) {
-        toast.error(error.message || "Failed to unenroll student");
-      }
+    try {
+      await unenrollStudent(assessmentId, studentId);
+      showModal("success", "Success", "Student unenrolled successfully!");
+      await getEnrolledStudents(assessmentId); // Refresh list
+    } catch (error) {
+      console.error("❌ Unenroll error:", error);
+      showModal("error", "Error", error.message || "Failed to unenroll student");
     }
+  };
+
+  const handleStudentAdded = () => {
+    getEnrolledStudents(assessmentId); // Refresh enrolled students list
   };
 
   const showModal = (type, title, message) => {
     setModal({ isOpen: true, type, title, message });
+    toast[type === "success" ? "success" : "error"](message);
   };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <Navbar />
-        <div className="flex items-center justify-center h-96">
-          <LoadingSpinner />
-        </div>
-        <Footer />
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-4">Enroll Students</h1>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {/* Single Enroll */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">Enroll Students</h1>
+          <p className="text-gray-600">Enroll students in the assessment or register new students</p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Enroll Student Form */}
           <Card>
             <CardHeader>
-              <h2 className="text-xl font-semibold text-gray-900">Enroll Single Student</h2>
+              <h2 className="text-xl font-semibold text-gray-900">Add Student to Assessment</h2>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleSingleEnroll} className="space-y-4">
-                <input
-                  type="email"
-                  value={singleEmail}
-                  onChange={(e) => setSingleEmail(e.target.value)}
-                  placeholder="Student email"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                  required
-                />
-                <button type="submit" className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
-                  Enroll
-                </button>
-              </form>
+              <AddStudent assessmentId={assessmentId} onStudentAdded={handleStudentAdded} />
             </CardContent>
           </Card>
 
-          {/* Bulk Enroll */}
+          {/* Enrolled Students List */}
           <Card>
             <CardHeader>
-              <h2 className="text-xl font-semibold text-gray-900">Bulk Enroll</h2>
+              <h2 className="text-xl font-semibold text-gray-900">Enrolled Students</h2>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleBulkEnroll} className="space-y-4">
-                <textarea
-                  value={bulkEmails}
-                  onChange={(e) => setBulkEmails(e.target.value)}
-                  placeholder="Enter emails, one per line"
-                  rows={5}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                />
-                <button type="submit" className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
-                  Enroll Bulk
-                </button>
-              </form>
+              {isLoading || loading ? (
+                <div className="flex justify-center items-center h-64">
+                  <LoadingSpinner size="lg" />
+                  <span className="ml-3 text-gray-600">Loading enrolled students...</span>
+                </div>
+              ) : !enrolledStudents || enrolledStudents.length === 0 ? (
+                <div className="text-center py-8">
+                  <div className="text-4xl mb-4">👩‍🎓</div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No Students Enrolled</h3>
+                  <p className="text-gray-600">Add students using the form to the left.</p>
+                </div>
+              ) : (
+                <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 rounded-lg">
+                  <table className="min-w-full divide-y divide-gray-300">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th
+                          scope="col"
+                          className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6"
+                        >
+                          Name
+                        </th>
+                        <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                          Email
+                        </th>
+                        <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-6">
+                          <span className="sr-only">Actions</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 bg-white">
+                      {enrolledStudents.map((student) => (
+                        <tr key={student.id}>
+                          <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
+                            {student.name}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                            {student.email}
+                          </td>
+                          <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                            <button
+                              onClick={() => handleUnenroll(student.id)}
+                              className="text-red-600 hover:text-red-900"
+                              disabled={loading}
+                            >
+                              Unenroll
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
-        {/* Enrolled Students List */}
-        <Card className="mt-8">
-          <CardHeader>
-            <h2 className="text-xl font-semibold text-gray-900">Enrolled Students ({enrolledStudents.length})</h2>
-          </CardHeader>
-          <CardContent>
-            {enrolledStudents.map((student) => (
-              <div key={student.id} className="flex justify-between items-center mb-4">
-                <p>{student.name} ({student.email})</p>
-                <button onClick={() => handleUnenroll(student.id)} className="text-red-600">
-                  Unenroll
-                </button>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
       </div>
       <Footer />
+
       <Modal
         isOpen={modal.isOpen}
         onClose={() => setModal({ ...modal, isOpen: false })}

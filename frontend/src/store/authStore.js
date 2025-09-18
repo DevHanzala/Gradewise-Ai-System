@@ -16,11 +16,15 @@ axios.interceptors.request.use(
   (config) => {
     const token = useAuthStore.getState().token;
     if (token) {
+      console.log(`🔍 Adding Authorization header for ${config.url}: Bearer ${token.slice(0, 10)}...`);
       config.headers.Authorization = `Bearer ${token}`;
+    } else {
+      console.warn(`⚠️ No token available for ${config.url}`);
     }
     return config;
   },
   (error) => {
+    console.error("❌ Request interceptor error:", error);
     return Promise.reject(error);
   },
 );
@@ -38,8 +42,8 @@ axios.interceptors.response.use(
       error.config.url.includes("/auth/change-password");
 
     if (error.response && error.response.status === 401 && !isAuthEndpoint) {
+      console.error(`❌ Unauthorized for ${error.config.url}: ${error.response.data.message || "Token invalid or expired"}`);
       useAuthStore.getState().logout();
-      console.error("Unauthorized: Token expired or invalid. User logged out.");
     }
     return Promise.reject(error);
   },
@@ -48,7 +52,7 @@ axios.interceptors.response.use(
 // Define the Zustand store for authentication
 const useAuthStore = create(
   persist(
-    (set) => ({
+    (set, get) => ({
       token: null,
       user: null,
 
@@ -60,13 +64,15 @@ const useAuthStore = create(
        */
       login: async (credentials) => {
         try {
+          console.log(`🔍 Attempting login for email: ${credentials.email}`);
           const response = await axios.post("/auth/login", credentials);
           const { token, user } = response.data;
-          set({ token, user }); // Update store state
-          return user; // Return user data for redirection
+          console.log(`✅ Login successful: User=${user.email}, Role=${user.role}`);
+          set({ token, user });
+          return user;
         } catch (error) {
-          // Re-throw the error so components can catch and display messages
-          throw error;
+          console.error("❌ Login error:", error.response?.data || error);
+          throw error.response?.data || error;
         }
       },
 
@@ -78,8 +84,6 @@ const useAuthStore = create(
       googleAuth: async () => {
         try {
           console.log("🔄 Starting Google authentication...");
-
-          // Sign in with Google using Firebase
           const result = await signInWithPopup(auth, googleProvider);
           const firebaseUser = result.user;
 
@@ -89,7 +93,6 @@ const useAuthStore = create(
             name: firebaseUser.displayName,
           });
 
-          // Send user data to backend
           const response = await axios.post("/auth/google-auth", {
             name: firebaseUser.displayName,
             email: firebaseUser.email,
@@ -97,14 +100,12 @@ const useAuthStore = create(
           });
 
           const { token, user } = response.data;
-          set({ token, user }); // Update store state
-
           console.log("✅ Backend Google auth successful:", user);
-          return user; // Return user data for redirection
+          set({ token, user });
+          return user;
         } catch (error) {
-          console.error("❌ Google auth error:", error);
-          // Re-throw the error so components can catch and display messages
-          throw error;
+          console.error("❌ Google auth error:", error.response?.data || error);
+          throw error.response?.data || error;
         }
       },
 
@@ -116,26 +117,42 @@ const useAuthStore = create(
        */
       signup: async (userData) => {
         try {
+          console.log(`🔍 Signing up user: ${userData.email}`);
           const response = await axios.post("/auth/signup", userData);
-          return response.data; // Return response data (e.g., success message)
+          console.log("✅ Signup successful:", userData.email);
+          return response.data;
         } catch (error) {
-          // Re-throw the error so components can catch and display messages
-          throw error;
+          console.error("❌ Signup error:", error.response?.data || error);
+          throw error.response?.data || error;
         }
       },
 
       /**
        * Handles student registration by admin/instructor.
-       * @param {Object} studentData - Object containing student's name, email, password, and role.
+       * @param {Object} studentData - Object containing student's name, email, and password.
        * @returns {Promise<Object>} The response data on successful registration.
        * @throws {Error} If registration fails.
        */
       registerStudent: async (studentData) => {
         try {
-          const response = await axios.post("/auth/register-student", studentData);
-          return response.data; // Return response data
+          const token = get().token;
+          if (!token) {
+            console.warn("⚠️ No token found in store for register-student");
+            throw new Error("No authentication token found. Please log in again.");
+          }
+          // Strip any role field to prevent conflicts
+          const { role, ...cleanedStudentData } = studentData;
+          console.log("🔍 Registering student:", cleanedStudentData);
+          const response = await axios.post("/auth/register-student", cleanedStudentData, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+          console.log("✅ Student registered:", response.data.user);
+          return response.data;
         } catch (error) {
-          throw error;
+          console.error("❌ Register student error:", error.response?.data || error);
+          throw error.response?.data || error;
         }
       },
 
@@ -147,9 +164,12 @@ const useAuthStore = create(
        */
       verifyEmail: async (token) => {
         try {
+          console.log(`🔍 Verifying email with token: ${token.slice(0, 10)}...`);
           const response = await axios.get(`/auth/verify/${token}`);
+          console.log("✅ Email verified");
           return response.data;
         } catch (error) {
+          console.error("❌ Verify email error:", error.response?.data || error);
           throw error.response?.data || error;
         }
       },
@@ -162,10 +182,13 @@ const useAuthStore = create(
        */
       forgotPassword: async (data) => {
         try {
+          console.log(`🔍 Sending forgot password request for: ${data.email}`);
           const response = await axios.post("/auth/forgot-password", data);
+          console.log("✅ Forgot password request sent");
           return response.data;
         } catch (error) {
-          throw error;
+          console.error("❌ Forgot password error:", error.response?.data || error);
+          throw error.response?.data || error;
         }
       },
 
@@ -177,9 +200,12 @@ const useAuthStore = create(
        */
       changePassword: async ({ currentPassword, newPassword, resetId }) => {
         try {
+          console.log("🔍 Changing password", { resetId: !!resetId });
           const response = await axios.post("/auth/change-password", { currentPassword, newPassword, resetId });
+          console.log("✅ Password changed");
           return response.data;
         } catch (error) {
+          console.error("❌ Change password error:", error.response?.data || error);
           throw error.response?.data || error;
         }
       },
@@ -191,10 +217,13 @@ const useAuthStore = create(
        */
       getUsers: async () => {
         try {
+          console.log("🔍 Fetching all users");
           const response = await axios.get("/auth/users");
+          console.log(`✅ Fetched ${response.data.users.length} users`);
           return response.data;
         } catch (error) {
-          throw error;
+          console.error("❌ Get users error:", error.response?.data || error);
+          throw error.response?.data || error;
         }
       },
 
@@ -206,10 +235,13 @@ const useAuthStore = create(
        */
       changeUserRole: async (data) => {
         try {
+          console.log("🔍 Changing user role:", data);
           const response = await axios.put("/auth/change-role", data);
+          console.log("✅ User role changed:", data);
           return response.data;
         } catch (error) {
-          throw error;
+          console.error("❌ Change user role error:", error.response?.data || error);
+          throw error.response?.data || error;
         }
       },
 
@@ -221,21 +253,27 @@ const useAuthStore = create(
        */
       deleteUser: async (userId) => {
         try {
+          console.log(`🔍 Deleting user: ${userId}`);
           const response = await axios.delete(`/auth/users/${userId}`);
+          console.log("✅ User deleted:", userId);
           return response.data;
         } catch (error) {
-          throw error;
+          console.error("❌ Delete user error:", error.response?.data || error);
+          throw error.response?.data || error;
         }
       },
 
       /**
        * Logs out a user by clearing the token and user information from the store.
        */
-      logout: () => set({ token: null, user: null }),
+      logout: () => {
+        console.log("🔄 Logging out user");
+        set({ token: null, user: null });
+      },
     }),
     {
-      name: "auth-storage", // Name for the localStorage key
-      storage: createJSONStorage(() => localStorage), // Use localStorage for persistence
+      name: "auth-storage",
+      storage: createJSONStorage(() => localStorage),
     },
   ),
 );
