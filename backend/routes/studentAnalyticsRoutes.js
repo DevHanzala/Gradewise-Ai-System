@@ -19,4 +19,3 @@ router.get("/recommendations", getStudentRecommendations)
 router.get("/report", getStudentReport)
 
 export default router
-

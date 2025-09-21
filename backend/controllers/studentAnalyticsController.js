@@ -208,4 +208,3 @@ const convertToCSV = (report) => {
 
   return csvContent
 }
-

@@ -6,6 +6,27 @@ const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 const useAssessmentStore = create((set) => ({
   assessments: [],
+  studentAssessments: [],
+  getStudentAssessments: async () => {
+    set({ loading: true, error: null });
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) throw new Error("No authentication token found");
+      const response = await axios.get(`${API_URL}/taking/assessments`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.data.success) {
+        set({ studentAssessments: response.data.data || [], loading: false });
+      } else {
+        set({ error: response.data.message, loading: false });
+      }
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || error.message || "Failed to fetch student assessments";
+      set({ error: errorMessage, loading: false, studentAssessments: [] });
+      toast.error(errorMessage);
+      throw error;
+    }
+  },
   currentAssessment: null,
   enrolledStudents: [],
   loading: false,

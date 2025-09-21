@@ -14,22 +14,43 @@ export const getStudentAnalytics = async (studentId) => {
   try {
     console.log(`📊 Getting analytics for student ${studentId}`)
 
+    // Check if tables exist first
+    const tableCheck = await db.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'assessment_attempts'
+      )
+    `)
+    
+    if (!tableCheck.rows[0].exists) {
+      return {
+        total_assessments: 0,
+        average_score: 0,
+        total_time_spent: 0,
+        progress_trend: [],
+        strengths: [],
+        weaknesses: [],
+        recent_performance: [],
+        subject_breakdown: []
+      }
+    }
+
     // Get all completed assessments
     const completedAssessments = await db.query(`
       SELECT 
         a.id,
         a.title,
         a.total_marks,
-        aa.submitted_at,
-        aa.percentage,
-        aa.time_taken,
-        aa.grade
+        aa.completed_at AS submitted_at,
+        aa.score AS percentage, -- Assuming score is percentage or will be calculated
+        aa.time_taken
       FROM assessment_attempts aa
       JOIN assessments a ON aa.assessment_id = a.id
       WHERE aa.student_id = $1 
-        AND aa.submitted_at IS NOT NULL
-        AND aa.status = 'submitted'
-      ORDER BY aa.submitted_at ASC
+        AND aa.completed_at IS NOT NULL
+        AND aa.status = 'completed'
+      ORDER BY aa.completed_at ASC
     `, [studentId])
 
     const assessments = completedAssessments.rows
@@ -66,7 +87,7 @@ export const getStudentAnalytics = async (studentId) => {
       assessment_id: a.id,
       title: a.title,
       score: a.percentage || 0,
-      grade: a.grade,
+      grade: null, // No grade column, can be added if needed
       date: a.submitted_at,
       time_taken: a.time_taken
     }))
@@ -74,22 +95,20 @@ export const getStudentAnalytics = async (studentId) => {
     // Get question-level analysis for strengths/weaknesses
     const questionAnalysis = await db.query(`
       SELECT 
-        q.question_type,
-        q.difficulty_level,
-        q.topics,
-        sa.scored_marks,
-        q.marks_per_question,
+        gq.question_type,
+        sa.score AS scored_marks,
+        gq.marks,
         CASE 
-          WHEN sa.scored_marks >= q.marks_per_question * 0.8 THEN 'strength'
-          WHEN sa.scored_marks <= q.marks_per_question * 0.4 THEN 'weakness'
+          WHEN sa.score >= gq.marks * 0.8 THEN 'strength'
+          WHEN sa.score <= gq.marks * 0.4 THEN 'weakness'
           ELSE 'average'
         END as performance_category
       FROM student_answers sa
-      JOIN questions q ON sa.question_id = q.id
+      JOIN generated_questions gq ON sa.question_id = gq.id
       JOIN assessment_attempts aa ON sa.attempt_id = aa.id
       WHERE aa.student_id = $1 
-        AND aa.submitted_at IS NOT NULL
-        AND sa.scored_marks IS NOT NULL
+        AND aa.completed_at IS NOT NULL
+        AND sa.score IS NOT NULL
     `, [studentId])
 
     // Analyze strengths and weaknesses
@@ -98,9 +117,9 @@ export const getStudentAnalytics = async (studentId) => {
     const subjectBreakdown = {}
 
     questionAnalysis.rows.forEach(q => {
-      const topic = q.topics?.[0] || 'General'
+      const topic = q.question_type || 'General' // Using question_type as a proxy for topic since topics aren't in generated_questions
       const questionType = q.question_type || 'multiple_choice'
-      const difficulty = q.difficulty_level || 'medium'
+      const difficulty = 'medium' // No difficulty_level, defaulting to medium
 
       // Track by topic
       if (!subjectBreakdown[topic]) {
@@ -111,7 +130,7 @@ export const getStudentAnalytics = async (studentId) => {
         }
       }
       subjectBreakdown[topic].total_questions++
-      subjectBreakdown[topic].correct_answers += q.scored_marks
+      subjectBreakdown[topic].correct_answers += q.scored_marks || 0
 
       // Categorize as strength or weakness
       if (q.performance_category === 'strength') {
@@ -120,7 +139,7 @@ export const getStudentAnalytics = async (studentId) => {
           question_type: questionType,
           difficulty,
           score: q.scored_marks,
-          max_score: q.marks_per_question
+          max_score: q.marks
         })
       } else if (q.performance_category === 'weakness') {
         weaknesses.push({
@@ -128,7 +147,7 @@ export const getStudentAnalytics = async (studentId) => {
           question_type: questionType,
           difficulty,
           score: q.scored_marks,
-          max_score: q.marks_per_question
+          max_score: q.marks
         })
       }
     })
@@ -177,16 +196,29 @@ export const getStudentAnalytics = async (studentId) => {
  */
 export const getPerformanceOverTime = async (studentId, timeRange = 'month') => {
   try {
+    // Check if tables exist first
+    const tableCheck = await db.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'assessment_attempts'
+      )
+    `)
+    
+    if (!tableCheck.rows[0].exists) {
+      return []
+    }
+
     let dateFilter
     switch (timeRange) {
       case 'week':
-        dateFilter = "AND aa.submitted_at >= NOW() - INTERVAL '7 days'"
+        dateFilter = "AND aa.completed_at >= NOW() - INTERVAL '7 days'"
         break
       case 'month':
-        dateFilter = "AND aa.submitted_at >= NOW() - INTERVAL '30 days'"
+        dateFilter = "AND aa.completed_at >= NOW() - INTERVAL '30 days'"
         break
       case 'year':
-        dateFilter = "AND aa.submitted_at >= NOW() - INTERVAL '1 year'"
+        dateFilter = "AND aa.completed_at >= NOW() - INTERVAL '1 year'"
         break
       default:
         dateFilter = ""
@@ -194,16 +226,17 @@ export const getPerformanceOverTime = async (studentId, timeRange = 'month') => 
 
     const query = `
       SELECT 
-        DATE(aa.submitted_at) as date,
-        AVG(aa.percentage) as average_score,
+        DATE(aa.completed_at) as date,
+        AVG(aa.score * 100.0 / a.total_marks) as average_score, -- Calculate percentage
         COUNT(*) as assessments_taken,
         SUM(aa.time_taken) as total_time
       FROM assessment_attempts aa
+      JOIN assessments a ON aa.assessment_id = a.id
       WHERE aa.student_id = $1 
-        AND aa.submitted_at IS NOT NULL
-        AND aa.status = 'submitted'
+        AND aa.completed_at IS NOT NULL
+        AND aa.status = 'completed'
         ${dateFilter}
-      GROUP BY DATE(aa.submitted_at)
+      GROUP BY DATE(aa.completed_at)
       ORDER BY date ASC
     `
 
@@ -225,30 +258,28 @@ export const getLearningRecommendations = async (studentId) => {
     // Get weak areas
     const weakAreas = await db.query(`
       SELECT 
-        q.topics,
-        q.question_type,
-        q.difficulty_level,
+        gq.question_type,
         COUNT(*) as question_count,
-        AVG(sa.scored_marks / q.marks_per_question) as average_performance
+        AVG(sa.score * 1.0 / gq.marks) as average_performance
       FROM student_answers sa
-      JOIN questions q ON sa.question_id = q.id
+      JOIN generated_questions gq ON sa.question_id = gq.id
       JOIN assessment_attempts aa ON sa.attempt_id = aa.id
       WHERE aa.student_id = $1 
-        AND aa.submitted_at IS NOT NULL
-        AND sa.scored_marks IS NOT NULL
-        AND sa.scored_marks < q.marks_per_question * 0.6
-      GROUP BY q.topics, q.question_type, q.difficulty_level
+        AND aa.completed_at IS NOT NULL
+        AND sa.score IS NOT NULL
+        AND sa.score < gq.marks * 0.6
+      GROUP BY gq.question_type
       ORDER BY average_performance ASC
       LIMIT 5
     `, [studentId])
 
     // Get improvement suggestions
     const recommendations = weakAreas.rows.map(area => ({
-      topic: area.topics?.[0] || 'General',
+      topic: area.question_type || 'General', // Using question_type as topic proxy
       question_type: area.question_type,
-      difficulty: area.difficulty_level,
+      difficulty: 'medium', // No difficulty_level, defaulting to medium
       performance: Math.round(area.average_performance * 100),
-      suggestion: getSuggestionForArea(area.question_type, area.difficulty_level)
+      suggestion: getSuggestionForArea(area.question_type, 'medium')
     }))
 
     return {
@@ -333,7 +364,7 @@ const getRecommendedAssessments = async (studentId) => {
         AND a.id NOT IN (
           SELECT DISTINCT assessment_id 
           FROM assessment_attempts 
-          WHERE student_id = $1 AND submitted_at IS NOT NULL
+          WHERE student_id = $1 AND completed_at IS NOT NULL
         )
       ORDER BY a.created_at DESC
       LIMIT 3
@@ -346,4 +377,3 @@ const getRecommendedAssessments = async (studentId) => {
     return []
   }
 }
-

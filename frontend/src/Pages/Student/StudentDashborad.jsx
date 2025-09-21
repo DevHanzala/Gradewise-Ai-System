@@ -29,44 +29,47 @@ function StudentDashboard() {
     }
   }
 
-useEffect(() => {
-  if (studentAssessments.length > 0) {
-    const attemptable = studentAssessments.filter((a) => {
-      const status = getAssessmentStatus(a).status
-      return status === "available" || status === "upcoming"
-    })
-    const completed = studentAssessments.filter((a) => getAssessmentStatus(a).status === "completed")
-    const totalScore = completed.reduce((sum, a) => sum + (a.score || 0), 0)
-    const averageScore = completed.length > 0 ? Math.round(totalScore / completed.length) : 0
-    setStats({
-      totalAssessments: attemptable.length,
-      completedAssessments: completed.length,
-      pendingAssessments: attemptable.length,
-      averageScore,
-    })
-  } else {
-    setStats({
-      totalAssessments: 0,
-      completedAssessments: 0,
-      pendingAssessments: 0,
-      averageScore: 0,
-    })
-  }
-}, [studentAssessments])
+  useEffect(() => {
+    if (studentAssessments.length > 0) {
+      const attemptable = studentAssessments.filter((a) => {
+        const status = getAssessmentStatus(a).status
+        return status === "available" || status === "upcoming"
+      })
+      const completed = studentAssessments.filter((a) => getAssessmentStatus(a).status === "completed")
+      const totalScore = completed.reduce((sum, a) => sum + (a.score || 0), 0)
+      const averageScore = completed.length > 0 ? Math.round(totalScore / completed.length) : 0
+      setStats({
+        totalAssessments: attemptable.length,
+        completedAssessments: completed.length,
+        pendingAssessments: attemptable.length,
+        averageScore,
+      })
+    } else {
+      setStats({
+        totalAssessments: 0,
+        completedAssessments: 0,
+        pendingAssessments: 0,
+        averageScore: 0,
+      })
+    }
+  }, [studentAssessments])
 
   const getAssessmentStatus = (assessment) => {
     const now = new Date()
     const startDate = assessment.start_date ? new Date(assessment.start_date) : null
     const endDate = assessment.end_date ? new Date(assessment.end_date) : null
 
+    // Check if the assessment has a completed attempt
+    const completedAttempt = assessment.attempts?.find(a => a.status === 'completed' && a.completed_at)
+    if (completedAttempt) {
+      return { status: "completed", color: "green", text: "Completed" }
+    }
+
     if (endDate && now > endDate) {
       return { status: "expired", color: "red", text: "Expired" }
     }
     if (startDate && now < startDate) {
       return { status: "upcoming", color: "yellow", text: "Upcoming" }
-    }
-    if (assessment.submitted) {
-      return { status: "completed", color: "green", text: "Completed" }
     }
     return { status: "available", color: "blue", text: "Available" }
   }
@@ -239,9 +242,8 @@ useEffect(() => {
                               <h3 className="font-medium text-gray-900">{assessment.title}</h3>
                               <p className="text-sm text-gray-600">{assessment.description}</p>
                               <div className="flex items-center space-x-4 mt-2 text-xs text-gray-500">
-                                <span>⏱️ {assessment.duration} minutes</span>
-                                <span>📝 {assessment.total_marks} marks</span>
-                                <span>📅 Due: {formatDate(assessment.end_date)}</span>
+                                <span>📝 AI-Generated Questions</span>
+                                <span>🤖 Auto-Graded</span>
                               </div>
                             </div>
                             <div className="flex items-center space-x-3">
@@ -290,27 +292,30 @@ useEffect(() => {
                     {studentAssessments
                       .filter((assessment) => getAssessmentStatus(assessment).status === "completed")
                       .slice(0, 5)
-                      .map((assessment) => (
-                        <div key={assessment.id} className="flex items-center space-x-3">
-                          <div className="flex-shrink-0">
-                            <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                              <svg
-                                className="w-4 h-4 text-green-600"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
+                      .map((assessment) => {
+                        const completedAttempt = assessment.attempts?.find(a => a.status === 'completed')
+                        return (
+                          <div key={assessment.id} className="flex items-center space-x-3">
+                            <div className="flex-shrink-0">
+                              <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                                <svg
+                                  className="w-4 h-4 text-green-600"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                              </div>
                             </div>
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-gray-900">{assessment.title}</p>
+                              <p className="text-xs text-gray-500">Completed on {formatDate(completedAttempt?.completed_at)}</p>
+                            </div>
+                            <div className="text-sm font-medium text-green-600">{completedAttempt?.score || "Pending"}</div>
                           </div>
-                          <div className="flex-1">
-                            <p className="text-sm font-medium text-gray-900">{assessment.title}</p>
-                            <p className="text-xs text-gray-500">Completed on {formatDate(assessment.submitted_at)}</p>
-                          </div>
-                          <div className="text-sm font-medium text-green-600">{assessment.score || "Pending"}</div>
-                        </div>
-                      ))}
+                        )
+                      })}
                   </div>
                 ) : (
                   <p className="text-gray-500 text-center py-8">No recent activity</p>

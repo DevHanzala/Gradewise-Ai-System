@@ -7,6 +7,9 @@ import Modal from "../../../components/ui/Modal";
 import Navbar from "../../../components/Navbar";
 import Footer from "../../../components/Footer";
 import toast from "react-hot-toast";
+import axios from "axios";
+
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 function AssessmentDetail() {
   const { id } = useParams(); // Extract assessmentId from URL
@@ -98,7 +101,7 @@ function AssessmentDetail() {
             <CardHeader>
               <div className="flex justify-between items-center">
                 <h2 className="text-xl font-semibold text-gray-900">{currentAssessment.title}</h2>
-                <div>
+                <div className="flex items-center space-x-4">
                   {!currentAssessment.is_executed && (
                     <Link
                       to={`/instructor/assessments/${id}/edit`}
@@ -113,6 +116,93 @@ function AssessmentDetail() {
                   >
                     Manage Students
                   </Link>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const token = localStorage.getItem("token");
+                        const res = await axios.get(`${API_URL}/taking/assessments/${id}/print`, {
+                          headers: { Authorization: `Bearer ${token}` },
+                        });
+                        if (!res.data?.success) throw new Error(res.data?.message || "Failed to fetch print data");
+
+                        // Build printable HTML
+                        const questions = res.data.data.questions || [];
+                        const container = document.createElement("div");
+                        container.style.padding = "24px";
+                        container.style.maxWidth = "800px";
+                        const title = document.createElement("h2");
+                        title.innerText = `${currentAssessment.title} — Answer Key`;
+                        title.style.marginBottom = "16px";
+                        container.appendChild(title);
+                        questions.forEach((q, idx) => {
+                          const wrap = document.createElement("div");
+                          wrap.style.marginBottom = "12px";
+                          const h = document.createElement("h4");
+                          h.innerText = `Q${idx + 1}. (${q.question_type})`;
+                          const p = document.createElement("p");
+                          p.innerText = q.question_text;
+                          wrap.appendChild(h);
+                          wrap.appendChild(p);
+                          if (Array.isArray(q.options) && q.options.length) {
+                            const ul = document.createElement("ul");
+                            q.options.forEach((opt) => {
+                              const li = document.createElement("li");
+                              li.innerText = opt;
+                              ul.appendChild(li);
+                            });
+                            wrap.appendChild(ul);
+                          }
+                          const ans = document.createElement("p");
+                          ans.innerText = `Answer: ${q.correct_answer}`;
+                          ans.style.fontWeight = "600";
+                          wrap.appendChild(ans);
+                          container.appendChild(wrap);
+                        });
+
+                        // Lazy import to avoid bundling if unused
+                        const [{ jsPDF }, html2canvas] = await Promise.all([
+                          import("jspdf"),
+                          import("html2canvas")
+                        ]);
+
+                        const canvas = await html2canvas.default(container, { scale: 2 });
+                        const imgData = canvas.toDataURL("image/png");
+                        const pdf = new jsPDF({ orientation: "p", unit: "pt", format: "a4" });
+                        const pageWidth = pdf.internal.pageSize.getWidth();
+                        const pageHeight = pdf.internal.pageSize.getHeight();
+                        const imgWidth = pageWidth - 40;
+                        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+                        let y = 20;
+                        if (imgHeight < pageHeight) {
+                          pdf.addImage(imgData, "PNG", 20, y, imgWidth, imgHeight);
+                        } else {
+                          // Paginate
+                          let sY = 0;
+                          const pageCanvas = document.createElement("canvas");
+                          const ctx = pageCanvas.getContext("2d");
+                          const ratio = imgWidth / canvas.width;
+                          pageCanvas.width = imgWidth;
+                          pageCanvas.height = pageHeight - 40;
+                          while (sY < canvas.height) {
+                            ctx.clearRect(0, 0, pageCanvas.width, pageCanvas.height);
+                            ctx.drawImage(canvas, 0, sY, canvas.width, (pageHeight - 40) / ratio, 0, 0, imgWidth, pageCanvas.height);
+                            const pageImg = pageCanvas.toDataURL("image/png");
+                            pdf.addImage(pageImg, "PNG", 20, 20, imgWidth, pageCanvas.height);
+                            sY += (pageHeight - 40) / ratio;
+                            if (sY < canvas.height) pdf.addPage();
+                          }
+                        }
+                        pdf.save(`assessment_${id}_answer_key.pdf`);
+                        toast.success("PDF generated");
+                      } catch (e) {
+                        console.error(e);
+                        toast.error(e.message || "Failed to generate PDF");
+                      }
+                    }}
+                    className="text-purple-600 hover:text-purple-900"
+                  >
+                    Print (PDF)
+                  </button>
                 </div>
               </div>
             </CardHeader>

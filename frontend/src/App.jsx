@@ -183,7 +183,7 @@ function App() {
             }
           />
           <Route
-            path="/instructor/assessments/:assessmentId/take"
+            path="/student/assessments/:assessmentId/take"
             element={
               <ProtectedRoute requiredRole="student">
                 <TakeAssessment />

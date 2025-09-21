@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardHeader, CardContent } from "../../components/ui/Card"
 import LoadingSpinner from "../../components/ui/LoadingSpinner"
 import Navbar from "../../components/Navbar"
@@ -14,6 +14,15 @@ function StudentAnalytics() {
   const [recommendations, setRecommendations] = useState(null)
   const [loading, setLoading] = useState(true)
   const [timeRange, setTimeRange] = useState('month')
+  const chartBars = useMemo(() => {
+    if (!performance?.length) return []
+    const max = Math.max(...performance.map(p => Math.round(p.average_score || 0)), 100)
+    return performance.map(p => ({
+      label: new Date(p.date).toLocaleDateString(),
+      value: Math.round(p.average_score || 0),
+      width: `${Math.min(100, Math.round(((p.average_score || 0) / max) * 100))}%`
+    }))
+  }, [performance])
 
   useEffect(() => {
     loadAnalyticsData()
@@ -239,15 +248,15 @@ function StudentAnalytics() {
             <CardContent>
               {performance.length > 0 ? (
                 <div className="space-y-3">
-                  {performance.map((data, index) => (
-                    <div key={index} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                      <div>
-                        <p className="font-medium text-gray-900">{new Date(data.date).toLocaleDateString()}</p>
-                        <p className="text-sm text-gray-600">{data.assessments_taken} assessments</p>
+                  {/* Simple bar chart */}
+                  {chartBars.map((b, idx) => (
+                    <div key={idx} className="w-full">
+                      <div className="flex justify-between text-xs text-gray-600 mb-1">
+                        <span>{b.label}</span>
+                        <span>{b.value}%</span>
                       </div>
-                      <div className="text-right">
-                        <p className="font-medium text-gray-900">{Math.round(data.average_score)}%</p>
-                        <p className="text-sm text-gray-600">{formatTime(data.total_time)}</p>
+                      <div className="w-full h-3 bg-gray-200 rounded">
+                        <div className="h-3 bg-blue-600 rounded" style={{ width: b.width }} />
                       </div>
                     </div>
                   ))}

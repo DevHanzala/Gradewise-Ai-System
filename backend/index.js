@@ -6,19 +6,20 @@ import authRoutes from "./routes/authRoutes.js";
 import assessmentRoutes from "./routes/assessmentRoutes.js";
 import resourceRoutes from "./routes/resourceRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
+import studentAnalyticsRoutes from "./routes/studentAnalyticsRoutes.js";
+import takingRoutes from "./routes/takingRoutes.js";
 import { errorHandler, notFound } from "./middleware/errorMiddleware.js";
 import fs from "fs/promises";
 import path from "path";
 
-// Load environment variables
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Create uploads directory if it doesn't exist
+// Create uploads directory
 const ensureUploadsDir = async () => {
-  const uploadPath = path.join(process.cwd(), "uploads", "assessments");
+  const uploadPath = path.join(process.cwd(), "Uploads", "assessments");
   try {
     await fs.mkdir(uploadPath, { recursive: true });
     console.log("✅ Uploads directory ensured at:", uploadPath);
@@ -27,8 +28,13 @@ const ensureUploadsDir = async () => {
   }
 };
 
-// Connect to database and create tables
-connectDB().then(() => ensureUploadsDir());
+// Connect to database
+connectDB()
+  .then(() => ensureUploadsDir())
+  .catch((error) => {
+    console.error("❌ Database connection failed:", error);
+    process.exit(1);
+  });
 
 // Middleware
 app.use(
@@ -40,21 +46,21 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// Request logging middleware (development only)
-if (process.env.NODE_ENV === "development") {
-  app.use((req, res, next) => {
-    console.log(`📝 ${req.method} ${req.path} - ${new Date().toISOString()}`);
-    next();
-  });
-}
+// Request logging
+app.use((req, res, next) => {
+  console.log(`📡 ${req.method} ${req.originalUrl} - ${new Date().toISOString()}`);
+  next();
+});
 
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/assessments", assessmentRoutes);
 app.use("/api/resources", resourceRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/student-analytics", studentAnalyticsRoutes);
+app.use("/api/taking", takingRoutes);
 
-// Health check endpoint
+// Health check
 app.get("/api/health", (req, res) => {
   res.status(200).json({
     success: true,
@@ -65,10 +71,10 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// 404 handler for undefined routes
+// 404 handler
 app.use(notFound);
 
-// Error handling middleware (must be last)
+// Error handler
 app.use(errorHandler);
 
 // Start server
@@ -79,13 +85,11 @@ app.listen(PORT, () => {
   console.log(`🔧 API Health Check: http://localhost:${PORT}/api/health`);
 });
 
-// Handle unhandled promise rejections
-process.on("unhandledRejection", (err, promise) => {
+// Handle unhandled errors
+process.on("unhandledRejection", (err) => {
   console.error("❌ Unhandled Promise Rejection:", err.message);
   process.exit(1);
 });
-
-// Handle uncaught exceptions
 process.on("uncaughtException", (err) => {
   console.error("❌ Uncaught Exception:", err.message);
   process.exit(1);

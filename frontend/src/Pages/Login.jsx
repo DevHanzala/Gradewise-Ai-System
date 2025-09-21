@@ -1,139 +1,131 @@
-import { useState } from "react"
-import { Link, useNavigate } from "react-router-dom"
-import { z } from "zod"
-import useAuthStore from "../store/authStore.js"
-import { Card, CardHeader, CardContent } from "../components/ui/Card.jsx"
-import LoadingSpinner from "../components/ui/LoadingSpinner.jsx"
-import Modal from "../components/ui/Modal.jsx"
-import Navbar from "../components/Navbar.jsx"
-import Footer from "../components/Footer.jsx"
-import toast from "react-hot-toast"
-import axios from "axios"
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { z } from "zod";
+import useAuthStore from "../store/authStore.js";
+import { Card, CardHeader, CardContent } from "../components/ui/Card.jsx";
+import LoadingSpinner from "../components/ui/LoadingSpinner.jsx";
+import Modal from "../components/ui/Modal.jsx";
+import Navbar from "../components/Navbar.jsx";
+import Footer from "../components/Footer.jsx";
+import toast from "react-hot-toast";
+import axios from "axios";
 
 // Zod schema for login validation
 const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
   password: z.string().min(1, "Password is required"),
-})
+});
 
 function Login() {
-  const navigate = useNavigate()
-  const { login, googleAuth } = useAuthStore()
+  const navigate = useNavigate();
+  const { login, googleAuth } = useAuthStore();
 
   const [formData, setFormData] = useState({
     email: "",
     password: "",
-  })
+  });
 
-  const [errors, setErrors] = useState({})
-  const [loading, setLoading] = useState(false)
-  const [googleLoading, setGoogleLoading] = useState(false)
-  const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" })
+  const [errors, setErrors] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" });
 
   const handleChange = (e) => {
-    const { name, value } = e.target
-    setFormData((prev) => ({ ...prev, [name]: value }))
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
     // Clear error when user starts typing
     if (errors[name]) {
-      setErrors((prev) => ({ ...prev, [name]: "" }))
+      setErrors((prev) => ({ ...prev, [name]: "" }));
     }
-  }
+  };
 
   const showModal = (type, title, message) => {
-    setModal({ isOpen: true, type, title, message })
-    toast[type === "success" ? "success" : "error"](message)
-  }
+    setModal({ isOpen: true, type, title, message });
+    toast[type === "success" ? "success" : "error"](message);
+  };
 
   const redirectUser = (user) => {
     switch (user.role) {
       case "super_admin":
-        navigate("/super-admin/dashboard")
-        break
+        navigate("/super-admin/dashboard");
+        break;
       case "admin":
-        navigate("/admin/dashboard")
-        break
+        navigate("/admin/dashboard");
+        break;
       case "instructor":
-        navigate("/instructor/dashboard")
-        break
+        navigate("/instructor/dashboard");
+        break;
       case "student":
-        navigate("/student/dashboard")
-        break
+        navigate("/student/dashboard");
+        break;
       default:
-        navigate("/profile")
+        navigate("/profile");
     }
-  }
+  };
 
   const handleSubmit = async (e) => {
-    e.preventDefault()
-    setLoading(true)
-    setErrors({})
-
-    // Validate formData exists
-    if (!formData) {
-      showModal("error", "Form Error", "Form data is undefined. Please try again.")
-      setLoading(false)
-      return
-    }
+    e.preventDefault();
+    setLoading(true);
+    setErrors({});
 
     try {
       // Validate form data
-      loginSchema.parse(formData)
+      loginSchema.parse(formData);
 
       // Attempt login
-      const user = await login(formData)
-      localStorage.setItem('token', user.token)
-      axios.defaults.headers.common['Authorization'] = `Bearer ${user.token}`
-      console.log('✅ Login successful, token set:', user.token)
-      showModal("success", "Login Successful!", `Welcome back, ${user.name}!`)
+      const response = await login(formData);
+      const token = useAuthStore.getState().token; // Get token from store state
+      localStorage.setItem("token", token); // Store token correctly
+      axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+      console.log("✅ Login successful, token set:", token.slice(0, 10) + "...");
+      showModal("success", "Login Successful!", `Welcome back, ${response.name}!`);
 
       // Redirect based on role after a short delay
       setTimeout(() => {
-        redirectUser(user)
-      }, 1500)
+        redirectUser(response);
+      }, 1500);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        // Handle validation errors
-        const fieldErrors = {}
+        const fieldErrors = {};
         error.errors.forEach((err) => {
-          fieldErrors[err.path[0]] = err.message
-        })
-        setErrors(fieldErrors)
+          fieldErrors[err.path[0]] = err.message;
+        });
+        setErrors(fieldErrors);
       } else {
-        // Handle API errors
-        const errorMessage = error.response?.data?.message || "Login failed. Please try again."
-        showModal("error", "Login Failed", errorMessage)
+        const errorMessage = error.response?.data?.message || "Login failed. Please try again.";
+        showModal("error", "Login Failed", errorMessage);
       }
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const handleGoogleLogin = async () => {
-    setGoogleLoading(true)
+    setGoogleLoading(true);
     try {
-      const user = await googleAuth()
-      localStorage.setItem('token', user.token)
-      axios.defaults.headers.common['Authorization'] = `Bearer ${user.token}`
-      console.log('✅ Google login successful, token set:', user.token)
-      showModal("success", "Welcome!", `Successfully signed in with Google! Welcome back, ${user.name}!`)
+      const response = await googleAuth();
+      const token = useAuthStore.getState().token; // Get token from store state
+      localStorage.setItem("token", token); // Store token correctly
+      axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+      console.log("✅ Google login successful, token set:", token.slice(0, 10) + "...");
+      showModal("success", "Welcome!", `Successfully signed in with Google! Welcome back, ${response.name}!`);
 
       // Redirect based on role after a short delay
       setTimeout(() => {
-        redirectUser(user)
-      }, 1500)
+        redirectUser(response);
+      }, 1500);
     } catch (error) {
-      console.error("Google login error:", error)
-      const errorMessage = error.response?.data?.message || error.message || "Google login failed. Please try again."
-      showModal("error", "Google Login Failed", errorMessage)
+      console.error("Google login error:", error);
+      const errorMessage = error.response?.data?.message || error.message || "Google login failed. Please try again.";
+      showModal("error", "Google Login Failed", errorMessage);
     } finally {
-      setGoogleLoading(false)
+      setGoogleLoading(false);
     }
-  }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
-
       <div className="flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
         <Card className="w-full max-w-md">
           <CardHeader>
@@ -265,7 +257,7 @@ function Login() {
         {modal.message}
       </Modal>
     </div>
-  )
+  );
 }
 
-export default Login
+export default Login;
