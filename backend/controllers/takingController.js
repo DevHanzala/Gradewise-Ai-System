@@ -5,9 +5,9 @@ export const startAssessmentForStudent = async (req, res) => {
   try {
     const studentId = req.user.id;
     const { assessmentId } = req.params;
-    const { language = "en", numQuestions = 5, questionTypes = ["multiple_choice"] } = req.body || {}; // Instructor-defined
+    const { language = "en" } = req.body || {};
 
-    console.log(`📝 Starting assessment ${assessmentId} for student ${studentId} in language ${language}, with ${numQuestions} questions of types ${questionTypes.join(", ")}`);
+    console.log(`📝 Starting assessment ${assessmentId} for student ${studentId} in language ${language}`);
 
     // Check if assessment exists
     const { rows: assessRows } = await db.query(
@@ -20,6 +20,22 @@ export const startAssessmentForStudent = async (req, res) => {
       return res.status(404).json({ success: false, message: "Assessment not found" });
     }
     const assessment = assessRows[0];
+
+    // Fetch question blocks to determine types and counts
+    const { rows: blockRows } = await db.query(
+      `SELECT question_type, question_count FROM question_blocks WHERE assessment_id = $1`,
+      [assessmentId]
+    );
+    if (blockRows.length === 0) {
+      console.warn(`⚠️ No question blocks defined for assessment ${assessmentId}. Using defaults.`);
+      blockRows = [{ question_type: "multiple_choice", question_count: 5 }];
+    }
+
+    const questionTypes = [...new Set(blockRows.map(b => b.question_type))];
+    const numQuestions = blockRows.reduce((sum, b) => sum + b.question_count, 0);
+    const typeCountsStr = blockRows.map(b => `${b.question_count} ${b.question_type}`).join(", ");
+
+    console.log(`📊 Using instructor-defined questions: ${typeCountsStr} (total ${numQuestions})`);
 
     // Set is_executed to true if not already
     if (!assessment.is_executed) {
@@ -61,87 +77,92 @@ export const startAssessmentForStudent = async (req, res) => {
     const attemptId = attemptRows[0].id;
     console.log(`✅ Created attempt ${attemptId} for assessment ${assessmentId}`);
 
-    // Generate questions via Gemini creation key with lighter flash model
+    // Generate questions via Gemini
     const model = getCreationModel("gemini-1.5-flash");
     const langName = mapLanguageCode(language);
     let questions = [];
-    let attempts = 0;
-    const maxAttempts = 3;
     let questionPrompt = `Generate a complete and valid JSON array of unique assessment questions in ${langName} based on the assessment title "${assessment.title}" and prompt "${assessment.prompt}". Follow these rules strictly:
     1. Start with: [
-    2. Each question must have: id, question_type, question_text, options (array of 4 for multiple_choice or null for true_false), correct_answer, marks.
+    2. Each question must have: id, question_type, question_text, options (array of 4 for multiple_choice, array of pairs for matching, null for true_false or short_answer), correct_answer (string for multiple_choice/short_answer, boolean for true_false, array of pairs for matching), marks.
     3. Use only the following question types: ${questionTypes.join(", ")}.
-    4. Include exactly ${numQuestions} unique questions, ensuring no repetition within this set.
+    4. Include exactly these counts: ${typeCountsStr}. Total questions: ${numQuestions}. Ensure no repetition within this set.
     5. End with: ]
     6. No extra text, comments, or incomplete objects. Ensure all fields (id, question_type, question_text, options, correct_answer, marks) are present and valid for each question.
     External links for context: ${(assessment.external_links || []).join(", ")}`;
 
-    while (attempts < maxAttempts && (!Array.isArray(questions) || questions.length !== numQuestions)) {
-      try {
-        const gen = await model.generateContent({
-          contents: [{ role: "user", parts: [{ text: questionPrompt }] }],
-          generationConfig: { maxOutputTokens: 4000, temperature: 0.7 },
-        });
-        const text = (await gen.response).text();
-        console.log(`📝 Raw Gemini response (Attempt ${attempts + 1}):`, text); // Log full response for debugging
-        const jsonMatch = text.match(/\[[\s\S]*\]/); // Changed to greedy match to capture full array
-        if (jsonMatch) {
-          try {
-            questions = JSON.parse(jsonMatch[0]);
-            if (!Array.isArray(questions)) {
-              throw new Error("Parsed result is not an array");
-            }
-            if (questions.length > numQuestions) {
-              questions = questions.slice(0, numQuestions); // Truncate if more than requested
-            }
-            // Validate question types and required fields
-            const invalidTypes = questions.filter(q => !questionTypes.includes(q.question_type));
-            if (invalidTypes.length > 0) {
-              throw new Error(`Invalid question types detected: ${invalidTypes.map(q => q.question_type).join(", ")}`);
-            }
-            const missingFields = questions.filter(q => !q.id || !q.question_text || !q.correct_answer || !q.marks || (q.question_type === "multiple_choice" && (!q.options || q.options.length !== 4)));
-            if (missingFields.length > 0) {
-              throw new Error("Missing required fields in some questions");
-            }
-            // Check for uniqueness by question_text
-            const uniqueQuestions = new Set(questions.map(q => q.question_text));
-            if (uniqueQuestions.size !== questions.length) {
-              throw new Error("Duplicate questions detected");
-            }
-          } catch (e) {
-            console.error(`❌ Invalid JSON from Gemini (Attempt ${attempts + 1}):`, e.message, "Raw text:", jsonMatch[0]);
-            questions = []; // Reset for next attempt
+    try {
+      const gen = await model.generateContent({
+        contents: [{ role: "user", parts: [{ text: questionPrompt }] }],
+        generationConfig: { maxOutputTokens: 4000, temperature: 0.7 },
+      });
+      const text = (await gen.response).text();
+      console.log(`📝 Raw Gemini response:`, text);
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        try {
+          questions = JSON.parse(jsonMatch[0]);
+          if (!Array.isArray(questions)) {
+            throw new Error("Parsed result is not an array");
           }
-        } else {
-          console.warn(`⚠️ No valid JSON array found in response (Attempt ${attempts + 1})`);
+          if (questions.length > numQuestions) {
+            questions = questions.slice(0, numQuestions);
+          }
+          const invalidTypes = questions.filter(q => !questionTypes.includes(q.question_type));
+          if (invalidTypes.length > 0) {
+            throw new Error(`Invalid question types detected: ${invalidTypes.map(q => q.question_type).join(", ")}`);
+          }
+          const missingFields = questions.filter(q =>
+            q.id === undefined ||
+            q.question_text === undefined ||
+            q.correct_answer === undefined ||
+            q.marks === undefined ||
+            (q.question_type === "multiple_choice" && (!q.options || q.options.length !== 4)) ||
+            (q.question_type === "matching" && (!q.options || !Array.isArray(q.options) || q.options.length !== 4 || !q.correct_answer || !Array.isArray(q.correct_answer) || q.correct_answer.length !== 4))
+          );
+          if (missingFields.length > 0) {
+            throw new Error("Missing required fields in some questions");
+          }
+          const uniqueQuestions = new Set(questions.map(q => q.question_text));
+          if (uniqueQuestions.size !== questions.length) {
+            throw new Error("Duplicate questions detected");
+          }
+          const generatedCounts = questions.reduce((acc, q) => {
+            acc[q.question_type] = (acc[q.question_type] || 0) + 1;
+            return acc;
+          }, {});
+          const expectedCounts = blockRows.reduce((acc, b) => {
+            acc[b.question_type] = b.question_count;
+            return acc;
+          }, {});
+          const countsMatch = questionTypes.every(type => generatedCounts[type] === expectedCounts[type]);
+          if (!countsMatch) {
+            throw new Error("Generated question counts per type do not match instructor settings");
+          }
+        } catch (e) {
+          console.error(`❌ Invalid JSON from Gemini:`, e.message, "Raw text:", jsonMatch[0]);
           questions = [];
         }
-      } catch (e) {
-        console.error(`❌ Failed to generate questions from Gemini (Attempt ${attempts + 1}):`, e.message);
+      } else {
+        console.warn(`⚠️ No valid JSON array found in response`);
         questions = [];
       }
-      attempts++;
-      if (attempts < maxAttempts && (!Array.isArray(questions) || questions.length < numQuestions)) {
-        await new Promise(resolve => setTimeout(resolve, 60000)); // 1-minute delay to avoid rate limit
-        console.warn(`⚠️ Retrying question generation (Attempt ${attempts + 1}/${maxAttempts}) with adjusted prompt`);
-        questionPrompt += `\nEnsure all ${numQuestions} questions are unique, complete, and fully formatted with all fields (id, question_type, question_text, options, correct_answer, marks). Avoid repetition and ensure strict JSON compliance.`;
-      }
+    } catch (e) {
+      console.error(`❌ Failed to generate questions from Gemini:`, e.message);
+      questions = [];
     }
 
     if (!Array.isArray(questions) || questions.length === 0) {
-      console.error(`❌ Failed to generate any valid questions after ${maxAttempts} attempts`);
+      console.error(`❌ Failed to generate valid questions`);
       return res.status(500).json({ success: false, message: "Failed to generate valid questions. Please try again or contact support." });
     }
 
-    // If fewer questions than requested, proceed with what we have
     if (questions.length < numQuestions) {
       console.warn(`⚠️ Generated only ${questions.length} questions instead of ${numQuestions}. Proceeding with available questions.`);
     }
 
-    // Predict duration based on instructor's configuration
-    let duration = Math.ceil(questions.length * 3 / 5) * 5; // Adjusted to actual number of questions
+    let duration = Math.ceil(questions.length * 3 / 5) * 5;
     try {
-      const durationPrompt = `Estimate the duration (in minutes) for an assessment with ${questions.length} questions of types ${questionTypes.join(", ")}. Guidelines: 2-3 minutes per multiple_choice, 1-2 minutes per true_false, return a single number rounded up to the nearest 5.`;
+      const durationPrompt = `Estimate the duration (in minutes) for an assessment with ${questions.length} questions of types ${questionTypes.join(", ")}. Guidelines: 2-3 minutes per multiple_choice, 1-2 minutes per true_false, 3-4 minutes per matching, 2-3 minutes per short_answer, return a single number rounded up to the nearest 5.`;
       const durationGen = await model.generateContent({
         contents: [{ role: "user", parts: [{ text: durationPrompt }] }],
         generationConfig: { maxOutputTokens: 50, temperature: 0.3 },
@@ -171,7 +192,7 @@ export const startAssessmentForStudent = async (req, res) => {
     }
 
     const { rows: dbQuestions } = await db.query(
-      `SELECT id, question_order, question_type, question_text, options, correct_answer, marks
+      `SELECT id, question_order, question_type, question_text, options::text, correct_answer, marks
        FROM generated_questions WHERE attempt_id = $1 ORDER BY question_order ASC`,
       [attemptId]
     );
@@ -197,7 +218,6 @@ export const submitAssessmentForStudent = async (req, res) => {
 
     console.log(`📝 Submitting assessment ${assessmentId} for student ${studentId}, attempt ${attemptId}`);
 
-    // Validate attempt
     const { rows: attemptRows } = await db.query(
       `SELECT * FROM assessment_attempts WHERE id = $1 AND student_id = $2 AND assessment_id = $3 AND status = 'in_progress'`,
       [attemptId, studentId, assessmentId]
@@ -207,7 +227,6 @@ export const submitAssessmentForStudent = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid or completed attempt" });
     }
 
-    // Fetch questions
     const { rows: questionRows } = await db.query(
       `SELECT id, question_type, question_text, correct_answer, marks
        FROM generated_questions WHERE attempt_id = $1`,
@@ -219,7 +238,6 @@ export const submitAssessmentForStudent = async (req, res) => {
       return res.status(400).json({ success: false, message: "No questions found for this attempt" });
     }
 
-    // Validate all answers are provided
     if (!Array.isArray(answers) || answers.length !== questionRows.length) {
       console.warn(`⚠️ Incomplete answers provided for attempt ${attemptId}, expected ${questionRows.length}, got ${answers.length}`);
       return res.status(400).json({ success: false, message: `Please answer all ${questionRows.length} questions` });
@@ -232,15 +250,13 @@ export const submitAssessmentForStudent = async (req, res) => {
       return res.status(400).json({ success: false, message: `Please answer all ${questionRows.length} questions` });
     }
 
-    // Evaluate answers using Gemini with batched prompt to reduce API calls
     const model = getCheckingModel();
     let totalScore = 0;
     const evaluatedAnswers = [];
 
-    // Batch all evaluations into one prompt
     const evaluationPrompt = `Evaluate the following answers for correctness:\n${validAnswers.map((answer, index) => {
       const question = questionMap.get(answer.questionId);
-      return `Question ${index + 1}:\nQuestion: ${question.question_text}\nQuestion Type: ${question.question_type}\nCorrect Answer: ${question.correct_answer}\nStudent Answer: ${answer.answer}\nLanguage: ${mapLanguageCode(language)}\nMarks: ${question.marks}`;
+      return `Question ${index + 1}:\nQuestion: ${question.question_text}\nQuestion Type: ${question.question_type}\nCorrect Answer: ${JSON.stringify(question.correct_answer)}\nStudent Answer: ${JSON.stringify(answer.answer)}\nLanguage: ${mapLanguageCode(language)}\nMarks: ${question.marks}`;
     }).join("\n")}\nProvide a JSON array where each object has: { questionId: number, isCorrect: boolean, feedback: string, score: number }`;
     let evaluations = [];
     try {
@@ -256,24 +272,30 @@ export const submitAssessmentForStudent = async (req, res) => {
           throw new Error("Invalid evaluation format");
         }
         evaluations.forEach(evaluation => {
-          evaluation.score = Math.floor(evaluation.score); // Ensure integer score
+          evaluation.score = Math.floor(evaluation.score);
         });
       }
     } catch (e) {
       console.error(`❌ Failed to evaluate answers from Gemini:`, e.message);
       evaluations = validAnswers.map((answer, index) => {
         const question = questionMap.get(answer.questionId);
-        const isCorrect = (question.question_type === "multiple_choice" || question.question_type === "true_false") && answer.answer === question.correct_answer;
+        let isCorrect = false;
+        if (question.question_type === "multiple_choice" || question.question_type === "true_false") {
+          isCorrect = answer.answer === question.correct_answer;
+        } else if (question.question_type === "matching") {
+          isCorrect = JSON.stringify(answer.answer) === JSON.stringify(question.correct_answer);
+        } else if (question.question_type === "short_answer") {
+          isCorrect = answer.answer.toLowerCase().trim() === question.correct_answer.toLowerCase().trim();
+        }
         return {
           questionId: answer.questionId,
           isCorrect,
-          feedback: isCorrect ? "Correct answer" : `Incorrect. Correct answer: ${question.correct_answer}`,
+          feedback: isCorrect ? "Correct answer" : `Incorrect. Correct answer: ${JSON.stringify(question.correct_answer)}`,
           score: isCorrect ? Math.floor(question.marks) : 0,
         };
       });
     }
 
-    // Process evaluations
     for (let i = 0; i < evaluations.length; i++) {
       const evaluation = evaluations[i];
       const answer = validAnswers[i];
@@ -287,7 +309,6 @@ export const submitAssessmentForStudent = async (req, res) => {
       });
     }
 
-    // Store answers and update attempt
     for (const answer of evaluatedAnswers) {
       await db.query(
         `INSERT INTO student_answers (attempt_id, question_id, student_answer, is_correct, feedback, score, answered_at)

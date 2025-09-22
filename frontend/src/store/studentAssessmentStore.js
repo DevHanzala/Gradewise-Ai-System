@@ -29,12 +29,31 @@ const useStudentAssessmentStore = create((set, get) => ({
       console.log(`📝 Sending request to start assessment with ID ${assessmentId} and language ${language}`);
       const response = await axios.post(
         `${API_URL}/taking/assessments/${assessmentId}/start`,
-        { language, numQuestions: 5, questionTypes: ["multiple_choice"] }, // Default for now, to be set by instructor
+        { language },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (response.data.success) {
         set({
-          assessmentQuestions: response.data.data.questions.map((q) => ({ ...q, answer: null })),
+          assessmentQuestions: response.data.data.questions.map((q) => {
+            console.log(`📋 Processing question ${q.id}: options = ${q.options}, correct_answer = ${JSON.stringify(q.correct_answer)}`);
+            let parsedOptions = null;
+            try {
+              parsedOptions = q.options ? JSON.parse(q.options) : null;
+              if (!Array.isArray(parsedOptions)) {
+                console.warn(`⚠️ Invalid options format for question ${q.id}:`, q.options);
+                parsedOptions = null;
+              }
+            } catch (e) {
+              console.error(`❌ Failed to parse options for question ${q.id}:`, e.message, q.options);
+              parsedOptions = null;
+            }
+            return {
+              ...q,
+              answer: null,
+              options: parsedOptions,
+              correct_answer: q.correct_answer, // Already an array/object
+            };
+          }),
           timeRemaining: (response.data.data.duration || 15) * 60,
           isSubmitted: false,
           attemptId: response.data.data.attemptId,

@@ -315,6 +315,40 @@ function TakeAssessment() {
                     </label>
                   </div>
                 )}
+                {currentQuestion.question_type === "matching" && currentQuestion.options && Array.isArray(currentQuestion.options) && (
+                  <div className="space-y-4">
+                    {currentQuestion.options.map((option, index) => (
+                      <div key={index} className="flex items-center space-x-4">
+                        <span className="font-medium">{Object.values(option)[0]}</span>
+                        <select
+                          value={currentQuestion.answer?.[index]?.[1] || ""}
+                          onChange={(e) => {
+                            const newAnswer = [...(currentQuestion.answer || currentQuestion.options)];
+                            newAnswer[index][1] = e.target.value;
+                            handleAnswerUpdate(currentQuestion.id, newAnswer);
+                          }}
+                          className="border rounded px-2 py-1"
+                        >
+                          <option value="">Select match</option>
+                          {currentQuestion.options.map((opt) => (
+                            <option key={JSON.stringify(opt)} value={Object.values(opt)[1]}>{Object.values(opt)[1]}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {currentQuestion.question_type === "short_answer" && (
+                  <div>
+                    <input
+                      type="text"
+                      value={currentQuestion.answer || ""}
+                      onChange={(e) => handleAnswerUpdate(currentQuestion.id, e.target.value)}
+                      className="w-full border rounded px-3 py-2"
+                      placeholder="Type your answer here"
+                    />
+                  </div>
+                )}
               </div>
             )}
             <div className="flex justify-between mt-8">
