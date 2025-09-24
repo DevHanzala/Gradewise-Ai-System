@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
+import useStudentAnalyticsStore from "./useStudentAnalyticsStore.js";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
@@ -51,7 +52,7 @@ const useStudentAssessmentStore = create((set, get) => ({
               ...q,
               answer: null,
               options: parsedOptions,
-              correct_answer: q.correct_answer, // Already an array/object
+              correct_answer: q.correct_answer,
             };
           }),
           timeRemaining: (response.data.data.duration || 15) * 60,
@@ -108,7 +109,7 @@ const useStudentAssessmentStore = create((set, get) => ({
         questionId: q.id,
         answer: q.answer || null,
       }));
-      if (answers.filter(a => a.answer !== undefined).length < assessmentQuestions.length) {
+      if (answers.filter((a) => a.answer !== undefined).length < assessmentQuestions.length) {
         throw new Error(`Please answer all ${assessmentQuestions.length} questions before submitting.`);
       }
       console.log(`📝 Submitting assessment ${assessmentId}, attemptId: ${attemptId}`);
@@ -120,6 +121,10 @@ const useStudentAssessmentStore = create((set, get) => ({
       if (response.data.success) {
         set({ isSubmitted: true, loading: false, submission: response.data.data });
         console.log(`✅ Assessment ${assessmentId} submitted successfully`);
+        // Refresh analytics data
+        useStudentAnalyticsStore.getState().fetchOverview();
+        useStudentAnalyticsStore.getState().fetchPerformance();
+        useStudentAnalyticsStore.getState().fetchRecommendations();
       } else {
         throw new Error(response.data.message || "Failed to submit assessment");
       }

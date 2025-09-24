@@ -1,96 +1,79 @@
-import { useState, useEffect } from "react"
-import { Link } from "react-router-dom"
-import useAuthStore from "../../store/authStore"
-import useAssessmentStore from "../../store/assessmentStore"
-import { Card, CardHeader, CardContent } from "../../components/ui/Card"
-import LoadingSpinner from "../../components/ui/LoadingSpinner"
-import Navbar from "../../components/Navbar"
-import Footer from "../../components/Footer"
+import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
+import useAuthStore from "../../store/authStore";
+import useStudentAnalyticsStore from "../../store/useStudentAnalyticsStore";
+import { Card, CardHeader, CardContent } from "../../components/ui/Card";
+import LoadingSpinner from "../../components/ui/LoadingSpinner";
+import Navbar from "../../components/Navbar";
+import Footer from "../../components/Footer";
 
 function StudentDashboard() {
-  const { user } = useAuthStore()
-  const { studentAssessments, loading, getStudentAssessments } = useAssessmentStore()
+  const { user } = useAuthStore();
+  const { analytics, loading, fetchOverview } = useStudentAnalyticsStore();
   const [stats, setStats] = useState({
     totalAssessments: 0,
     completedAssessments: 0,
     pendingAssessments: 0,
     averageScore: 0,
-  })
+    latestScore: 0,
+  });
 
   useEffect(() => {
-    loadDashboardData()
-  }, [])
-
-  const loadDashboardData = async () => {
-    try {
-      await getStudentAssessments()
-    } catch (error) {
-      console.error("Failed to load dashboard data:", error)
-    }
-  }
+    fetchOverview();
+  }, [fetchOverview]);
 
   useEffect(() => {
-    if (studentAssessments.length > 0) {
-      const attemptable = studentAssessments.filter((a) => {
-        const status = getAssessmentStatus(a).status
-        return status === "available" || status === "upcoming"
-      })
-      const completed = studentAssessments.filter((a) => getAssessmentStatus(a).status === "completed")
-      const totalScore = completed.reduce((sum, a) => sum + (a.score || 0), 0)
-      const averageScore = completed.length > 0 ? Math.round(totalScore / completed.length) : 0
+    if (analytics) {
+      const completed = analytics.recent_performance?.length || 0; // Approx. completed based on recent data
+      const total = analytics.total_assessments || 0;
+      const averageScore = analytics.average_score || 0;
+      const latestScore = analytics.recent_performance?.length > 0 ? analytics.recent_performance[0].score || 0 : 0;
+      const pending = Math.max(0, total - completed);
+
       setStats({
-        totalAssessments: attemptable.length,
-        completedAssessments: completed.length,
-        pendingAssessments: attemptable.length,
-        averageScore,
-      })
+        totalAssessments: total,
+        completedAssessments: completed,
+        pendingAssessments: pending,
+        averageScore: Math.round(averageScore),
+        latestScore: Math.round(latestScore),
+      });
     } else {
       setStats({
         totalAssessments: 0,
         completedAssessments: 0,
         pendingAssessments: 0,
         averageScore: 0,
-      })
+        latestScore: 0,
+      });
     }
-  }, [studentAssessments])
+  }, [analytics]);
 
   const getAssessmentStatus = (assessment) => {
-    const now = new Date()
-    const startDate = assessment.start_date ? new Date(assessment.start_date) : null
-    const endDate = assessment.end_date ? new Date(assessment.end_date) : null
-
-    // Check if the assessment has a completed attempt
-    const completedAttempt = assessment.attempts?.find(a => a.status === 'completed' && a.completed_at)
+    const now = new Date();
+    const completedAttempt = assessment.attempts?.find((a) => a.status === "completed" && a.completed_at);
     if (completedAttempt) {
-      return { status: "completed", color: "green", text: "Completed" }
+      return { status: "completed", color: "green", text: "Completed" };
     }
-
-    if (endDate && now > endDate) {
-      return { status: "expired", color: "red", text: "Expired" }
-    }
-    if (startDate && now < startDate) {
-      return { status: "upcoming", color: "yellow", text: "Upcoming" }
-    }
-    return { status: "available", color: "blue", text: "Available" }
-  }
+    return { status: "available", color: "blue", text: "Available" }; // No end_date, assume always available
+  };
 
   const formatDate = (dateString) => {
-    if (!dateString) return "No deadline"
+    if (!dateString) return "No deadline";
     return new Date(dateString).toLocaleDateString("en-US", {
       year: "numeric",
       month: "short",
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
-    })
-  }
+    });
+  };
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <LoadingSpinner size="lg" />
       </div>
-    )
+    );
   }
 
   return (
@@ -98,20 +81,23 @@ function StudentDashboard() {
       <Navbar />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Welcome back, {user?.name}!</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Welcome back, {user?.name || "Student"}!</h1>
           <p className="text-gray-600">Here's your assessment overview</p>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center">
                 <div className="flex-shrink-0">
                   <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                    <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg
+                      className="w-4 h-4 text-blue-600"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
@@ -134,7 +120,12 @@ function StudentDashboard() {
               <div className="flex items-center">
                 <div className="flex-shrink-0">
                   <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                    <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg
+                      className="w-4 h-4 text-green-600"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
                   </div>
@@ -152,7 +143,12 @@ function StudentDashboard() {
               <div className="flex items-center">
                 <div className="flex-shrink-0">
                   <div className="w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center">
-                    <svg className="w-4 h-4 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg
+                      className="w-4 h-4 text-yellow-600"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
@@ -175,7 +171,12 @@ function StudentDashboard() {
               <div className="flex items-center">
                 <div className="flex-shrink-0">
                   <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
-                    <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg
+                      className="w-4 h-4 text-purple-600"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
@@ -192,9 +193,36 @@ function StudentDashboard() {
               </div>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center">
+                    <svg
+                      className="w-4 h-4 text-indigo-600"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M13 10V3L4 14h7v7l9-11h-7z"
+                      />
+                    </svg>
+                  </div>
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">Latest Score</p>
+                  <p className="text-2xl font-bold text-gray-900">{stats.latestScore}%</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
-        {/* Analytics Link */}
         <div className="mb-8">
           <Card>
             <CardContent className="p-6">
@@ -205,8 +233,18 @@ function StudentDashboard() {
                   to="/student/analytics"
                   className="inline-flex items-center px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
                 >
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  <svg
+                    className="w-5 h-5 mr-2"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                    />
                   </svg>
                   View Analytics
                 </Link>
@@ -215,7 +253,6 @@ function StudentDashboard() {
           </Card>
         </div>
 
-        {/* Available Assessments */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <div>
             <Card>
@@ -223,24 +260,24 @@ function StudentDashboard() {
                 <h2 className="text-xl font-semibold text-gray-900">Available Assessments</h2>
               </CardHeader>
               <CardContent>
-                {studentAssessments.length > 0 ? (
+                {analytics?.assessments?.length > 0 ? (
                   <div className="space-y-4">
-                    {studentAssessments
+                    {analytics.assessments
                       .filter((assessment) => {
-                        const status = getAssessmentStatus(assessment)
-                        return status.status === "available" || status.status === "upcoming"
+                        const status = getAssessmentStatus(assessment);
+                        return status.status === "available";
                       })
                       .slice(0, 5)
                       .map((assessment) => {
-                        const status = getAssessmentStatus(assessment)
+                        const status = getAssessmentStatus(assessment);
                         return (
                           <div
                             key={assessment.id}
                             className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50"
                           >
                             <div className="flex-1">
-                              <h3 className="font-medium text-gray-900">{assessment.title}</h3>
-                              <p className="text-sm text-gray-600">{assessment.description}</p>
+                              <h3 className="font-medium text-gray-900">{assessment.title || "Untitled"}</h3>
+                              <p className="text-sm text-gray-600">{assessment.description || "No description"}</p>
                               <div className="flex items-center space-x-4 mt-2 text-xs text-gray-500">
                                 <span>📝 AI-Generated Questions</span>
                                 <span>🤖 Auto-Graded</span>
@@ -252,10 +289,10 @@ function StudentDashboard() {
                                   status.color === "blue"
                                     ? "bg-blue-100 text-blue-800"
                                     : status.color === "yellow"
-                                      ? "bg-yellow-100 text-yellow-800"
-                                      : status.color === "green"
-                                        ? "bg-green-100 text-green-800"
-                                        : "bg-red-100 text-red-800"
+                                    ? "bg-yellow-100 text-yellow-800"
+                                    : status.color === "green"
+                                    ? "bg-green-100 text-green-800"
+                                    : "bg-red-100 text-red-800"
                                 }`}
                               >
                                 {status.text}
@@ -270,7 +307,7 @@ function StudentDashboard() {
                               )}
                             </div>
                           </div>
-                        )
+                        );
                       })}
                   </div>
                 ) : (
@@ -280,42 +317,37 @@ function StudentDashboard() {
             </Card>
           </div>
 
-          {/* Recent Activity */}
           <div>
             <Card>
               <CardHeader>
                 <h2 className="text-xl font-semibold text-gray-900">Recent Activity</h2>
               </CardHeader>
               <CardContent>
-                {studentAssessments.length > 0 ? (
+                {analytics?.recent_performance?.length > 0 ? (
                   <div className="space-y-4">
-                    {studentAssessments
-                      .filter((assessment) => getAssessmentStatus(assessment).status === "completed")
+                    {analytics.recent_performance
                       .slice(0, 5)
-                      .map((assessment) => {
-                        const completedAttempt = assessment.attempts?.find(a => a.status === 'completed')
-                        return (
-                          <div key={assessment.id} className="flex items-center space-x-3">
-                            <div className="flex-shrink-0">
-                              <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                                <svg
-                                  className="w-4 h-4 text-green-600"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                </svg>
-                              </div>
+                      .map((attempt) => (
+                        <div key={attempt.assessment_id} className="flex items-center space-x-3">
+                          <div className="flex-shrink-0">
+                            <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                              <svg
+                                className="w-4 h-4 text-green-600"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
                             </div>
-                            <div className="flex-1">
-                              <p className="text-sm font-medium text-gray-900">{assessment.title}</p>
-                              <p className="text-xs text-gray-500">Completed on {formatDate(completedAttempt?.completed_at)}</p>
-                            </div>
-                            <div className="text-sm font-medium text-green-600">{completedAttempt?.score || "Pending"}</div>
                           </div>
-                        )
-                      })}
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-gray-900">{attempt.title || "Untitled"}</p>
+                            <p className="text-xs text-gray-500">Completed on {formatDate(attempt.date)}</p>
+                          </div>
+                          <div className="text-sm font-medium text-green-600">{attempt.score || "Pending"}%</div>
+                        </div>
+                      ))}
                   </div>
                 ) : (
                   <p className="text-gray-500 text-center py-8">No recent activity</p>
@@ -325,7 +357,6 @@ function StudentDashboard() {
           </div>
         </div>
 
-        {/* Quick Actions */}
         <div className="mt-8">
           <Card>
             <CardHeader>
@@ -333,13 +364,15 @@ function StudentDashboard() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Link
-                  to="/profile"
-                  className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50"
-                >
+                <Link to="/profile" className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
                   <div className="flex-shrink-0">
                     <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                      <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg
+                        className="w-4 h-4 text-green-600"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
                         <path
                           strokeLinecap="round"
                           strokeLinejoin="round"
@@ -356,12 +389,17 @@ function StudentDashboard() {
                 </Link>
 
                 <button
-                  onClick={loadDashboardData}
+                  onClick={fetchOverview}
                   className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50"
                 >
                   <div className="flex-shrink-0">
                     <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
-                      <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg
+                        className="w-4 h-4 text-purple-600"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
                         <path
                           strokeLinecap="round"
                           strokeLinejoin="round"
@@ -384,7 +422,7 @@ function StudentDashboard() {
 
       <Footer />
     </div>
-  )
+  );
 }
 
-export default StudentDashboard
+export default StudentDashboard;
