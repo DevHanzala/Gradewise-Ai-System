@@ -12,7 +12,8 @@ import { errorHandler, notFound } from "./middleware/errorMiddleware.js";
 import fs from "fs/promises";
 import path from "path";
 
-dotenv.config();
+dotenv.config({ path: path.resolve(process.cwd(), '.env') }); // Explicit path to .env in root
+console.log("GEMINI_CREATION_API_KEY loaded:", process.env.GEMINI_CREATION_API_KEY ? "Yes" : "No"); // Debug log
 
 const app = express();
 const PORT = process.env.PORT || 5000;

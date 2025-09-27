@@ -1,4 +1,4 @@
-import { createAssessment, getAssessmentsByInstructor, getAssessmentById, updateAssessment, deleteAssessment, storeQuestionBlocks, enrollStudent, unenrollStudent, getEnrolledStudents, clearLinksForAssessment } from "../models/assessmentModel.js"; // Added clearLinksForAssessment
+import { createAssessment, getAssessmentsByInstructor, getAssessmentById, updateAssessment, deleteAssessment, storeQuestionBlocks, enrollStudent, unenrollStudent, getEnrolledStudents, clearLinksForAssessment, generateAssessmentQuestions } from "../models/assessmentModel.js";
 import { findUserByEmail } from "../models/userModel.js";
 import { linkResourceToAssessment } from "../models/resourceModel.js"; 
 import { uploadResource } from "../controllers/resourceController.js";
@@ -362,5 +362,80 @@ export const getEnrolledStudentsController = async (req, res) => {
       message: "Failed to retrieve enrolled students",
       error: error.message,
     });
+  }
+};
+
+export const startAssessmentForStudent = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const { assessmentId } = req.params;
+    const { language = "en" } = req.body || {};
+
+    console.log(`📝 Starting assessment ${assessmentId} for student ${studentId} in language ${language}`);
+
+    // Check if assessment exists
+    const assessment = await getAssessmentById(assessmentId, studentId, "student");
+    if (!assessment) {
+      console.warn(`⚠️ Assessment ${assessmentId} not found or student ${studentId} not authorized`);
+      return res.status(404).json({ success: false, message: "Assessment not found or access denied" });
+    }
+
+    // Set is_executed to true if not already
+    if (!assessment.is_executed) {
+      console.log(`🔄 Updating is_executed to true for assessment ${assessmentId}`);
+      await updateAssessment(assessmentId, { is_executed: true });
+    } else {
+      console.log(`ℹ️ Assessment ${assessmentId} already has is_executed = true`);
+    }
+
+    // Validate enrollment
+    const { rows: enrollRows } = await pool.query(
+      `SELECT 1 FROM enrollments WHERE student_id = $1 AND assessment_id = $2`,
+      [studentId, assessmentId]
+    );
+    if (enrollRows.length === 0) {
+      console.warn(`⚠️ Student ${studentId} not enrolled for assessment ${assessmentId}`);
+      return res.status(403).json({ success: false, message: "You are not enrolled for this assessment" });
+    }
+
+    // Check for existing in-progress attempt
+    const { rows: existingAttempt } = await pool.query(
+      `SELECT id FROM assessment_attempts WHERE student_id = $1 AND assessment_id = $2 AND status = 'in_progress'`,
+      [studentId, assessmentId]
+    );
+    if (existingAttempt.length > 0) {
+      console.warn(`⚠️ In-progress attempt exists for student ${studentId}, assessment ${assessmentId}`);
+      return res.status(400).json({ success: false, message: "Assessment already in progress" });
+    }
+
+    // Create attempt
+    const { rows: attemptRows } = await pool.query(
+      `INSERT INTO assessment_attempts (student_id, assessment_id, attempt_number, started_at, language, status)
+       VALUES ($1, $2, 1, NOW(), $3, 'in_progress') RETURNING id`,
+      [studentId, assessmentId, language]
+    );
+    const attemptId = attemptRows[0].id;
+    console.log(`✅ Created attempt ${attemptId} for assessment ${assessmentId}`);
+
+    // Generate questions via model
+    const { questions, duration } = await generateAssessmentQuestions(assessmentId, attemptId, language, assessment);
+
+    // Verify stored questions
+    const { rows: dbQuestions } = await pool.query(
+      `SELECT id, question_order, question_type, question_text, options::text, correct_answer, marks
+       FROM generated_questions WHERE attempt_id = $1 ORDER BY question_order ASC`,
+      [attemptId]
+    );
+
+    console.log(`✅ Generated ${dbQuestions.length} questions for attempt ${attemptId}`);
+
+    res.status(200).json({
+      success: true,
+      message: "Assessment started successfully",
+      data: { attemptId, duration, questions: dbQuestions },
+    });
+  } catch (error) {
+    console.error("❌ startAssessmentForStudent error:", error.message, error.stack);
+    res.status(500).json({ success: false, message: "Failed to start assessment" });
   }
 };

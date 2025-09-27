@@ -29,6 +29,7 @@ const StudentAnalytics = () => {
   }, [fetchOverview, fetchPerformance, fetchRecommendations, timeRange]);
 
   const formatTime = (seconds) => {
+    if (isNaN(seconds) || seconds <= 0) return "0h 0m";
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     return `${hours}h ${minutes}m`;
@@ -54,7 +55,7 @@ const StudentAnalytics = () => {
 
         {/* Overview Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Card>
+          <Card className="shadow-md">
             <CardContent className="p-6">
               <div className="flex items-center">
                 <div className="p-2 bg-blue-100 rounded-lg">
@@ -80,7 +81,7 @@ const StudentAnalytics = () => {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="shadow-md">
             <CardContent className="p-6">
               <div className="flex items-center">
                 <div className="p-2 bg-green-100 rounded-lg">
@@ -106,7 +107,7 @@ const StudentAnalytics = () => {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="shadow-md">
             <CardContent className="p-6">
               <div className="flex items-center">
                 <div className="p-2 bg-purple-100 rounded-lg">
@@ -132,7 +133,7 @@ const StudentAnalytics = () => {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="shadow-md">
             <CardContent className="p-6">
               <div className="flex items-center">
                 <div className="p-2 bg-yellow-100 rounded-lg">
@@ -162,7 +163,7 @@ const StudentAnalytics = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Strengths & Weaknesses */}
           <div className="space-y-6">
-            <Card>
+            <Card className="shadow-md">
               <CardHeader>
                 <h3 className="text-lg font-semibold text-gray-900">My Strengths</h3>
               </CardHeader>
@@ -189,7 +190,7 @@ const StudentAnalytics = () => {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="shadow-md">
               <CardHeader>
                 <h3 className="text-lg font-semibold text-gray-900">Areas for Improvement</h3>
               </CardHeader>
@@ -218,7 +219,7 @@ const StudentAnalytics = () => {
           </div>
 
           {/* Performance Trend */}
-          <Card>
+          <Card className="shadow-md">
             <CardHeader>
               <div className="flex justify-between items-center">
                 <h3 className="text-lg font-semibold text-gray-900">Performance Trend</h3>
@@ -244,7 +245,7 @@ const StudentAnalytics = () => {
         </div>
 
         {/* Learning Recommendations */}
-        <Card className="mt-8">
+        <Card className="mt-8 shadow-md">
           <CardHeader>
             <h3 className="text-lg font-semibold text-gray-900">Learning Recommendations</h3>
           </CardHeader>

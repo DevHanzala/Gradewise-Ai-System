@@ -1,5 +1,6 @@
 import pool from "../DB/db.js";
 import { findResourceById } from "./resourceModel.js";
+import { getCreationModel, mapLanguageCode } from "../services/geminiService.js";
 
 export const ensureAssessmentsTable = async () => {
   try {
@@ -432,4 +433,149 @@ export const getEnrolledStudents = async (assessmentId) => {
     console.error("❌ Error fetching enrolled students:", error);
     throw error;
   }
+};
+
+export const generateAssessmentQuestions = async (assessmentId, attemptId, language, assessment) => {
+  // Fetch question blocks to determine types and counts
+  const { rows: blockRows } = await pool.query(
+    `SELECT question_type, question_count FROM question_blocks WHERE assessment_id = $1`,
+    [assessmentId]
+  );
+  if (blockRows.length === 0) {
+    throw new Error(`No question blocks defined for assessment ${assessmentId}`);
+  }
+
+  const questionTypes = [...new Set(blockRows.map(b => b.question_type))];
+  const numQuestions = blockRows.reduce((sum, b) => sum + b.question_count, 0);
+  const typeCountsStr = blockRows.map(b => `${b.question_count} ${b.question_type}`).join(", ");
+
+  console.log(`📊 Using instructor-defined questions: ${typeCountsStr} (total ${numQuestions})`);
+
+  // Generate questions via Gemini or fall back to instructor-defined structure
+  let questions = [];
+  const model = getCreationModel("gemini-1.5-pro"); // Explicitly use a stable model
+  const langName = mapLanguageCode(language);
+  let questionPrompt = `Generate a complete and valid JSON array of unique assessment questions in ${langName} based on the assessment title "${assessment.title}" and prompt "${assessment.prompt}". Follow these rules strictly:
+  1. Start with: [
+  2. Each question must have: id, question_type, question_text, options (array of 4 for multiple_choice, array of pairs for matching, null for true_false or short_answer), correct_answer (string for multiple_choice/short_answer, boolean for true_false, array of pairs for matching), marks.
+  3. Use only the following question types: ${questionTypes.join(", ")}.
+  4. Include exactly these counts: ${typeCountsStr}. Total questions: ${numQuestions}. Ensure no repetition within this set.
+  5. End with: ]
+  6. No extra text, comments, or incomplete objects. Ensure all fields (id, question_type, question_text, options, correct_answer, marks) are present and valid for each question.
+  External links for context: ${(assessment.external_links || []).join(", ")}`;
+
+  try {
+    const gen = await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: questionPrompt }] }],
+      generationConfig: { maxOutputTokens: 4000, temperature: 0.7 },
+    });
+    const text = (await gen.response).text();
+    console.log(`📝 Raw Gemini response:`, text);
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      try {
+        questions = JSON.parse(jsonMatch[0]);
+        if (!Array.isArray(questions)) {
+          throw new Error("Parsed result is not an array");
+        }
+        if (questions.length > numQuestions) {
+          questions = questions.slice(0, numQuestions);
+        }
+        const invalidTypes = questions.filter(q => !questionTypes.includes(q.question_type));
+        if (invalidTypes.length > 0) {
+          throw new Error(`Invalid question types detected: ${invalidTypes.map(q => q.question_type).join(", ")}`);
+        }
+        const missingFields = questions.filter(q =>
+          q.id === undefined ||
+          q.question_text === undefined ||
+          q.correct_answer === undefined ||
+          q.marks === undefined ||
+          (q.question_type === "multiple_choice" && (!q.options || q.options.length !== 4)) ||
+          (q.question_type === "matching" && (!q.options || !Array.isArray(q.options) || q.options.length !== 4 || !q.correct_answer || !Array.isArray(q.correct_answer) || q.correct_answer.length !== 4))
+        );
+        if (missingFields.length > 0) {
+          throw new Error("Missing required fields in some questions");
+        }
+        const uniqueQuestions = new Set(questions.map(q => q.question_text));
+        if (uniqueQuestions.size !== questions.length) {
+          throw new Error("Duplicate questions detected");
+        }
+        const generatedCounts = questions.reduce((acc, q) => {
+          acc[q.question_type] = (acc[q.question_type] || 0) + 1;
+          return acc;
+        }, {});
+        const expectedCounts = blockRows.reduce((acc, b) => {
+          acc[b.question_type] = b.question_count;
+          return acc;
+        }, {});
+        const countsMatch = questionTypes.every(type => generatedCounts[type] === expectedCounts[type]);
+        if (!countsMatch) {
+          throw new Error("Generated question counts per type do not match instructor settings");
+        }
+      } catch (e) {
+        console.error(`❌ Invalid JSON from Gemini:`, e.message, "Raw text:", jsonMatch[0]);
+        questions = [];
+      }
+    } else {
+      console.warn(`⚠️ No valid JSON array found in response`);
+      questions = [];
+    }
+  } catch (e) {
+    console.error(`❌ Failed to generate questions from Gemini:`, e.message);
+    questions = [];
+  }
+
+  // Fallback to instructor-defined question structure if Gemini fails
+  if (!Array.isArray(questions) || questions.length === 0) {
+    console.log(`🔄 Falling back to instructor-defined question structure for ${numQuestions} questions`);
+    questions = blockRows.flatMap(block => {
+      const { question_type, question_count } = block;
+      return Array.from({ length: question_count }, (_, index) => ({
+        id: `${assessmentId}-${question_type}-${index + 1}`,
+        question_type,
+        question_text: `Instructor-defined ${question_type} question ${index + 1} (to be replaced by student input)`,
+        options: question_type === "multiple_choice" ? ["Option A", "Option B", "Option C", "Option D"] : null,
+        correct_answer: question_type === "multiple_choice" ? "Option A" : question_type === "true_false" ? true : "Sample answer",
+        marks: 1,
+      }));
+    });
+  }
+
+  if (questions.length < numQuestions) {
+    console.warn(`⚠️ Generated only ${questions.length} questions instead of ${numQuestions}. Proceeding with available questions.`);
+  }
+
+  // Store questions in the database
+  for (let i = 0; i < questions.length; i++) {
+    const q = questions[i];
+    const options = Array.isArray(q.options) ? JSON.stringify(q.options) : null;
+    console.log(`📋 Inserting question ${i + 1}:`, { question_text: q.question_text, options, correct_answer: q.correct_answer });
+    await pool.query(
+      `INSERT INTO generated_questions (attempt_id, question_order, question_type, question_text, options, correct_answer, marks)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)`,
+      [attemptId, i + 1, q.question_type, q.question_text, options, q.correct_answer, q.marks]
+    );
+  }
+
+  // Estimate duration
+  let duration = Math.ceil(questions.length * 3 / 5) * 5;
+  try {
+    const durationPrompt = `Estimate the duration (in minutes) for an assessment with ${questions.length} questions of types ${questionTypes.join(", ")}. Guidelines: 2-3 minutes per multiple_choice, 1-2 minutes per true_false, 3-4 minutes per matching, 2-3 minutes per short_answer, return a single number rounded up to the nearest 5.`;
+    const durationGen = await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: durationPrompt }] }],
+      generationConfig: { maxOutputTokens: 50, temperature: 0.3 },
+    });
+    const durationText = (await durationGen.response).text().trim();
+    const parsedDuration = parseInt(durationText.match(/\d+/)?.[0], 10);
+    if (!isNaN(parsedDuration) && parsedDuration > 0) {
+      duration = Math.ceil(parsedDuration / 5) * 5;
+      console.log(`✅ AI-predicted duration: ${duration} minutes for ${questions.length} questions`);
+    } else {
+      console.warn(`⚠️ Invalid duration from Gemini: ${durationText}, using calculated fallback`);
+    }
+  } catch (e) {
+    console.error("❌ Failed to predict duration from Gemini:", e.message);
+  }
+
+  return { questions, duration };
 };

@@ -1,5 +1,5 @@
 import db from "../DB/db.js";
-import { getCreationModel } from "../services/geminiService.js"; // Using creation model for recommendation generation
+import { getCreationModel, generateContent } from "../services/geminiService.js";
 
 /**
  * Student Analytics Model
@@ -14,6 +14,19 @@ import { getCreationModel } from "../services/geminiService.js"; // Using creati
 export const getStudentAnalytics = async (studentId) => {
   try {
     console.log(`📊 Getting analytics for student ${studentId}`);
+
+    // Get enrolled assessments (available for the dashboard)
+    const enrolledAssessments = await db.query(`
+      SELECT 
+        a.id,
+        a.title,
+        a.prompt,
+        e.enrolled_at
+      FROM enrollments e
+      JOIN assessments a ON e.assessment_id = a.id
+      WHERE e.student_id = $1
+      ORDER BY e.enrolled_at DESC
+    `, [studentId]);
 
     // Get all completed assessments
     const completedAssessments = await db.query(`
@@ -32,12 +45,18 @@ export const getStudentAnalytics = async (studentId) => {
     `, [studentId]);
 
     const assessments = completedAssessments.rows;
+    const enrolled = enrolledAssessments.rows;
 
-    if (assessments.length === 0) {
+    const totalEnrolled = enrolled.length;
+    const completedCount = assessments.length;
+
+    if (completedCount === 0) {
       return {
-        total_assessments: 0,
+        total_assessments: totalEnrolled,
+        completed_assessments: 0,
         average_score: 0,
         total_time_spent: 0,
+        enrolled_assessments: enrolled,
         progress_trend: [],
         strengths: [],
         weaknesses: [],
@@ -46,12 +65,9 @@ export const getStudentAnalytics = async (studentId) => {
       };
     }
 
-    // Calculate overall metrics
-    const totalAssessments = assessments.length;
-    const averageScore = assessments.reduce((sum, a) => sum + (a.percentage || 0), 0) / totalAssessments;
+    const averageScore = assessments.reduce((sum, a) => sum + (a.percentage || 0), 0) / completedCount;
     const totalTimeSpent = assessments.reduce((sum, a) => sum + (a.time_taken || 0), 0);
 
-    // Get progress trend (last 10 assessments)
     const progressTrend = assessments.slice(-10).map((a, index) => ({
       assessment_id: a.id,
       title: a.title,
@@ -60,7 +76,6 @@ export const getStudentAnalytics = async (studentId) => {
       trend_index: index + 1
     }));
 
-    // Get recent performance (last 5 assessments)
     const recentPerformance = assessments.slice(-5).map(a => ({
       assessment_id: a.id,
       title: a.title,
@@ -70,7 +85,6 @@ export const getStudentAnalytics = async (studentId) => {
       time_taken: a.time_taken
     }));
 
-    // Get question-level analysis for strengths/weaknesses
     const questionAnalysis = await db.query(`
       SELECT 
         gq.question_type,
@@ -89,7 +103,6 @@ export const getStudentAnalytics = async (studentId) => {
         AND sa.score IS NOT NULL
     `, [studentId]);
 
-    // Analyze strengths and weaknesses
     const strengths = [];
     const weaknesses = [];
     const subjectBreakdown = {};
@@ -144,9 +157,11 @@ export const getStudentAnalytics = async (studentId) => {
       .slice(0, 3);
 
     return {
-      total_assessments: totalAssessments,
+      total_assessments: totalEnrolled,
+      completed_assessments: completedCount,
       average_score: Math.round(averageScore),
       total_time_spent: totalTimeSpent,
+      enrolled_assessments: enrolled,
       progress_trend: progressTrend,
       strengths: topStrengths,
       weaknesses: topWeaknesses,
@@ -236,21 +251,28 @@ export const getLearningRecommendations = async (studentId) => {
     `, [studentId]);
 
     // Use AI to generate personalized suggestions
-    const model = getCreationModel();
+    const client = await getCreationModel();
     const prompt = `Generate learning recommendations for a student with weak areas: ${JSON.stringify(weakAreas.rows)}. Provide a JSON object with weak_areas (array of objects with topic, performance, suggestion) and study_plan (object with daily_practice and weekly_review arrays).`;
-    const gen = await model.generateContent({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
+    const responseText = await generateContent(client, prompt, {
       generationConfig: { maxOutputTokens: 1000, temperature: 0.5 },
+      thinkingConfig: { thinkingBudget: 0 },
     });
-    const text = (await gen.response).text();
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
+
+    console.log(`Debug: Full response text: ${responseText.substring(0, 100)}${responseText.length > 100 ? "..." : ""}`);
     let aiRecommendations = {};
-    if (jsonMatch) {
-      try {
+    try {
+      // Extract JSON from response text
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (jsonMatch && jsonMatch[0]) {
         aiRecommendations = JSON.parse(jsonMatch[0]);
-      } catch (e) {
-        console.error("❌ AI recommendation parsing error:", e);
+      } else {
+        console.warn("No valid JSON found in response, using fallback plan");
+        aiRecommendations = { weak_areas: [], study_plan: {} };
       }
+    } catch (parseError) {
+      console.error("❌ AI recommendation parsing error:", parseError);
+      console.log("Falling back to default recommendations");
+      aiRecommendations = { weak_areas: [], study_plan: {} };
     }
 
     const recommendations = weakAreas.rows.map(area => ({

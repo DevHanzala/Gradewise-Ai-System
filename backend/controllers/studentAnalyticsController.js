@@ -34,7 +34,7 @@ export const getStudentOverview = async (req, res) => {
       data: analytics
     });
   } catch (error) {
-    console.error("❌ Get student overview error:", error);
+    console.error("❌ Get student overview error:", error.stack || error.message);
     res.status(500).json({
       success: false,
       message: "Failed to retrieve student analytics",
@@ -72,7 +72,7 @@ export const getStudentPerformance = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error("❌ Get student performance error:", error);
+    console.error("❌ Get student performance error:", error.stack || error.message);
     res.status(500).json({
       success: false,
       message: "Failed to retrieve performance data",
@@ -106,7 +106,7 @@ export const getStudentRecommendations = async (req, res) => {
       data: recommendations
     });
   } catch (error) {
-    console.error("❌ Get student recommendations error:", error);
+    console.error("❌ Get student recommendations error:", error.stack || error.message);
     res.status(500).json({
       success: false,
       message: "Failed to retrieve learning recommendations",
@@ -166,7 +166,7 @@ export const getStudentReport = async (req, res) => {
       data: report
     });
   } catch (error) {
-    console.error("❌ Get student report error:", error);
+    console.error("❌ Get student report error:", error.stack || error.message);
     res.status(500).json({
       success: false,
       message: "Failed to generate student report",
@@ -191,11 +191,22 @@ const convertToCSV = (report) => {
     ['Total Time Spent', `${Math.round(report.overview.total_time_spent / 60)} minutes`, 'Total time spent on assessments'],
     ['Strengths', report.overview.strengths.length, 'Number of identified strengths'],
     ['Weaknesses', report.overview.weaknesses.length, 'Number of areas needing improvement'],
-    ['Recommendations', report.recommendations.weak_areas.length, 'Number of learning recommendations']
+    ['Improvement Areas', report.recommendations.weak_areas.length, 'Number of areas with recommendations']
   ];
+
+  // Add weak areas as additional rows if they exist
+  if (report.recommendations.weak_areas && report.recommendations.weak_areas.length > 0) {
+    report.recommendations.weak_areas.forEach((area, index) => {
+      rows.push([
+        `Weak Area ${index + 1}`,
+        area.topic,
+        `Performance: ${area.performance}%, Suggestion: ${area.suggestion}`
+      ]);
+    });
+  }
 
   return [
     headers.join(','),
-    ...rows.map(row => row.join(','))
+    ...rows.map(row => row.map(field => `"${field}"`).join(',')) // Quote fields to handle commas
   ].join('\n');
 };

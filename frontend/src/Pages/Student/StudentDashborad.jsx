@@ -24,14 +24,14 @@ function StudentDashboard() {
 
   useEffect(() => {
     if (analytics) {
-      const completed = analytics.recent_performance?.length || 0; // Approx. completed based on recent data
-      const total = analytics.total_assessments || 0;
+      const totalEnrolled = analytics.total_assessments || 0;
+      const completed = analytics.completed_assessments || 0;
       const averageScore = analytics.average_score || 0;
       const latestScore = analytics.recent_performance?.length > 0 ? analytics.recent_performance[0].score || 0 : 0;
-      const pending = Math.max(0, total - completed);
+      const pending = Math.max(0, totalEnrolled - completed);
 
       setStats({
-        totalAssessments: total,
+        totalAssessments: totalEnrolled,
         completedAssessments: completed,
         pendingAssessments: pending,
         averageScore: Math.round(averageScore),
@@ -49,12 +49,13 @@ function StudentDashboard() {
   }, [analytics]);
 
   const getAssessmentStatus = (assessment) => {
-    const now = new Date();
-    const completedAttempt = assessment.attempts?.find((a) => a.status === "completed" && a.completed_at);
+    // Check if the student has a completed attempt
+    const completedAttempt = analytics.recent_performance?.find(a => a.assessment_id === assessment.id && a.date);
     if (completedAttempt) {
       return { status: "completed", color: "green", text: "Completed" };
     }
-    return { status: "available", color: "blue", text: "Available" }; // No end_date, assume always available
+    // If no attempt exists, assume available
+    return { status: "available", color: "blue", text: "Available" };
   };
 
   const formatDate = (dateString) => {
@@ -260,14 +261,9 @@ function StudentDashboard() {
                 <h2 className="text-xl font-semibold text-gray-900">Available Assessments</h2>
               </CardHeader>
               <CardContent>
-                {analytics?.assessments?.length > 0 ? (
+                {analytics?.enrolled_assessments?.length > 0 ? (
                   <div className="space-y-4">
-                    {analytics.assessments
-                      .filter((assessment) => {
-                        const status = getAssessmentStatus(assessment);
-                        return status.status === "available";
-                      })
-                      .slice(0, 5)
+                    {analytics.enrolled_assessments
                       .map((assessment) => {
                         const status = getAssessmentStatus(assessment);
                         return (
@@ -277,7 +273,7 @@ function StudentDashboard() {
                           >
                             <div className="flex-1">
                               <h3 className="font-medium text-gray-900">{assessment.title || "Untitled"}</h3>
-                              <p className="text-sm text-gray-600">{assessment.description || "No description"}</p>
+                              <p className="text-sm text-gray-600">{assessment.prompt || "No description"}</p>
                               <div className="flex items-center space-x-4 mt-2 text-xs text-gray-500">
                                 <span>📝 AI-Generated Questions</span>
                                 <span>🤖 Auto-Graded</span>

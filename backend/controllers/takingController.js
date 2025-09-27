@@ -1,5 +1,5 @@
 import db from "../DB/db.js";
-import { getCreationModel, getCheckingModel, mapLanguageCode } from "../services/geminiService.js";
+import { getCreationModel, getCheckingModel, mapLanguageCode, generateContent } from "../services/geminiService.js";
 
 export const startAssessmentForStudent = async (req, res) => {
   try {
@@ -78,7 +78,7 @@ export const startAssessmentForStudent = async (req, res) => {
     console.log(`✅ Created attempt ${attemptId} for assessment ${assessmentId}`);
 
     // Generate questions via Gemini
-    const model = getCreationModel("gemini-1.5-flash");
+    const client = await getCreationModel();
     const langName = mapLanguageCode(language);
     let questions = [];
     let questionPrompt = `Generate a complete and valid JSON array of unique assessment questions in ${langName} based on the assessment title "${assessment.title}" and prompt "${assessment.prompt}". Follow these rules strictly:
@@ -91,11 +91,7 @@ export const startAssessmentForStudent = async (req, res) => {
     External links for context: ${(assessment.external_links || []).join(", ")}`;
 
     try {
-      const gen = await model.generateContent({
-        contents: [{ role: "user", parts: [{ text: questionPrompt }] }],
-        generationConfig: { maxOutputTokens: 4000, temperature: 0.7 },
-      });
-      const text = (await gen.response).text();
+      const text = await generateContent(client, questionPrompt, { maxOutputTokens: 4000, temperature: 0.7 });
       console.log(`📝 Raw Gemini response:`, text);
       const jsonMatch = text.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
@@ -163,11 +159,7 @@ export const startAssessmentForStudent = async (req, res) => {
     let duration = Math.ceil(questions.length * 3 / 5) * 5;
     try {
       const durationPrompt = `Estimate the duration (in minutes) for an assessment with ${questions.length} questions of types ${questionTypes.join(", ")}. Guidelines: 2-3 minutes per multiple_choice, 1-2 minutes per true_false, 3-4 minutes per matching, 2-3 minutes per short_answer, return a single number rounded up to the nearest 5.`;
-      const durationGen = await model.generateContent({
-        contents: [{ role: "user", parts: [{ text: durationPrompt }] }],
-        generationConfig: { maxOutputTokens: 50, temperature: 0.3 },
-      });
-      const durationText = (await durationGen.response).text().trim();
+      const durationText = await generateContent(client, durationPrompt, { maxOutputTokens: 50, temperature: 0.3 });
       const parsedDuration = parseInt(durationText.match(/\d+/)?.[0], 10);
       if (!isNaN(parsedDuration) && parsedDuration > 0) {
         duration = Math.ceil(parsedDuration / 5) * 5;
@@ -250,7 +242,7 @@ export const submitAssessmentForStudent = async (req, res) => {
       return res.status(400).json({ success: false, message: `Please answer all ${questionRows.length} questions` });
     }
 
-    const model = getCheckingModel();
+    const client = await getCheckingModel();
     let totalScore = 0;
     const evaluatedAnswers = [];
 
@@ -260,11 +252,7 @@ export const submitAssessmentForStudent = async (req, res) => {
     }).join("\n")}\nProvide a JSON array where each object has: { questionId: number, isCorrect: boolean, feedback: string, score: number }`;
     let evaluations = [];
     try {
-      const gen = await model.generateContent({
-        contents: [{ role: "user", parts: [{ text: evaluationPrompt }] }],
-        generationConfig: { maxOutputTokens: 2000, temperature: 0.3 },
-      });
-      const text = (await gen.response).text();
+      const text = await generateContent(client, evaluationPrompt, { maxOutputTokens: 2000, temperature: 0.3 });
       const jsonMatch = text.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
         evaluations = JSON.parse(jsonMatch[0]);
@@ -272,7 +260,7 @@ export const submitAssessmentForStudent = async (req, res) => {
           throw new Error("Invalid evaluation format");
         }
         evaluations.forEach(evaluation => {
-          evaluation.score = Math.floor(evaluation.score);
+          evaluation.score = Math.floor(evaluation.score || 0);
         });
       }
     } catch (e) {
