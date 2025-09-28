@@ -1,7 +1,9 @@
 import {
   getStudentAnalytics,
   getPerformanceOverTime,
-  getLearningRecommendations
+  getLearningRecommendations,
+  getStudentAssessmentsList,
+  getAssessmentAnalytics
 } from "../models/studentAnalyticsModel.js";
 
 /**
@@ -116,13 +118,78 @@ export const getStudentRecommendations = async (req, res) => {
 };
 
 /**
+ * Get student's completed assessments list
+ * @route GET /api/student-analytics/assessments
+ */
+export const getStudentAssessments = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+
+    if (req.user.role !== "student") {
+      return res.status(403).json({
+        success: false,
+        message: "Only students can access their assessments"
+      });
+    }
+
+    const assessments = await getStudentAssessmentsList(studentId);
+
+    res.status(200).json({
+      success: true,
+      message: "Student assessments retrieved successfully",
+      data: assessments
+    });
+  } catch (error) {
+    console.error("❌ Get student assessments error:", error.stack || error.message);
+    res.status(500).json({
+      success: false,
+      message: "Failed to retrieve assessments",
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get details for a specific assessment
+ * @route GET /api/student-analytics/assessment/:id
+ */
+export const getAssessmentDetails = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const assessmentId = parseInt(req.params.id);
+
+    if (req.user.role !== "student") {
+      return res.status(403).json({
+        success: false,
+        message: "Only students can access their assessment details"
+      });
+    }
+
+    const details = await getAssessmentAnalytics(studentId, assessmentId);
+
+    res.status(200).json({
+      success: true,
+      message: "Assessment details retrieved successfully",
+      data: details
+    });
+  } catch (error) {
+    console.error("❌ Get assessment details error:", error.stack || error.message);
+    res.status(500).json({
+      success: false,
+      message: "Failed to retrieve assessment details",
+      error: error.message
+    });
+  }
+};
+
+/**
  * Get student's detailed analytics report
  * @route GET /api/student-analytics/report
  */
 export const getStudentReport = async (req, res) => {
   try {
     const studentId = req.user.id;
-    const { format = 'json' } = req.query;
+    const { format = 'json', assessmentId } = req.query;
 
     if (req.user.role !== "student") {
       return res.status(403).json({
@@ -131,32 +198,49 @@ export const getStudentReport = async (req, res) => {
       });
     }
 
-    console.log(`📋 Generating detailed report for student ${studentId}`);
+    console.log(`📋 Generating detailed report for student ${studentId}${assessmentId ? ` (assessment ${assessmentId})` : ''}`);
 
-    const [analytics, performance, recommendations] = await Promise.all([
-      getStudentAnalytics(studentId),
-      getPerformanceOverTime(studentId, 'month'),
-      getLearningRecommendations(studentId)
-    ]);
+    let report;
+    if (assessmentId) {
+      const details = await getAssessmentAnalytics(studentId, parseInt(assessmentId));
+      report = {
+        student_id: studentId,
+        assessment_id: assessmentId,
+        generated_at: new Date().toISOString(),
+        score: details.score,
+        weak_areas: details.weak_areas,
+        recommendations: details.recommendations,
+        summary: {
+          score: details.score,
+          improvement_areas: details.weak_areas.length
+        }
+      };
+    } else {
+      const [analytics, performance, recommendations] = await Promise.all([
+        getStudentAnalytics(studentId),
+        getPerformanceOverTime(studentId, 'month'),
+        getLearningRecommendations(studentId)
+      ]);
 
-    const report = {
-      student_id: studentId,
-      generated_at: new Date().toISOString(),
-      overview: analytics,
-      performance_trend: performance,
-      recommendations: recommendations,
-      summary: {
-        total_assessments_completed: analytics.total_assessments,
-        average_performance: analytics.average_score,
-        improvement_areas: recommendations.weak_areas.length,
-        strengths_count: analytics.strengths.length
-      }
-    };
+      report = {
+        student_id: studentId,
+        generated_at: new Date().toISOString(),
+        overview: analytics,
+        performance_trend: performance,
+        recommendations: recommendations,
+        summary: {
+          total_assessments_completed: analytics.total_assessments,
+          average_performance: analytics.average_score,
+          improvement_areas: recommendations.weak_areas.length,
+          strengths_count: analytics.strengths.length
+        }
+      };
+    }
 
     if (format === 'csv') {
-      const csvData = convertToCSV(report);
+      const csvData = convertToCSV(report, !!assessmentId);
       res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename="student-report-${studentId}.csv"`);
+      res.setHeader('Content-Disposition', `attachment; filename="student-report${assessmentId ? `-${assessmentId}` : ''}.csv"`);
       return res.send(csvData);
     }
 
@@ -178,25 +262,30 @@ export const getStudentReport = async (req, res) => {
 /**
  * Convert report data to CSV format
  */
-const convertToCSV = (report) => {
+const convertToCSV = (report, isSpecificAssessment = false) => {
   const headers = [
     'Metric',
     'Value',
     'Description'
   ];
 
-  const rows = [
-    ['Total Assessments', report.overview.total_assessments, 'Number of completed assessments'],
-    ['Average Score', `${report.overview.average_score}%`, 'Average performance across all assessments'],
-    ['Total Time Spent', `${Math.round(report.overview.total_time_spent / 60)} minutes`, 'Total time spent on assessments'],
-    ['Strengths', report.overview.strengths.length, 'Number of identified strengths'],
-    ['Weaknesses', report.overview.weaknesses.length, 'Number of areas needing improvement'],
-    ['Improvement Areas', report.recommendations.weak_areas.length, 'Number of areas with recommendations']
-  ];
+  const rows = [];
+
+  if (!isSpecificAssessment) {
+    rows.push(['Total Assessments', report.overview.total_assessments, 'Number of completed assessments']);
+    rows.push(['Average Score', `${report.overview.average_score}%`, 'Average performance across all assessments']);
+    rows.push(['Total Time Spent', `${Math.round(report.overview.total_time_spent / 60)} minutes`, 'Total time spent on assessments']);
+    rows.push(['Strengths', report.overview.strengths.length, 'Number of identified strengths']);
+    rows.push(['Weaknesses', report.overview.weaknesses.length, 'Number of areas needing improvement']);
+  } else {
+    rows.push(['Score', `${report.score}%`, 'Performance score for this assessment']);
+  }
+
+  rows.push(['Improvement Areas', report.summary.improvement_areas, 'Number of areas with recommendations']);
 
   // Add weak areas as additional rows if they exist
-  if (report.recommendations.weak_areas && report.recommendations.weak_areas.length > 0) {
-    report.recommendations.weak_areas.forEach((area, index) => {
+  if (report.weak_areas && report.weak_areas.length > 0) {
+    report.weak_areas.forEach((area, index) => {
       rows.push([
         `Weak Area ${index + 1}`,
         area.topic,

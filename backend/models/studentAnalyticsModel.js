@@ -28,19 +28,22 @@ export const getStudentAnalytics = async (studentId) => {
       ORDER BY e.enrolled_at DESC
     `, [studentId]);
 
-    // Get all completed assessments
+    // Get all completed assessments with calculated percentage
     const completedAssessments = await db.query(`
       SELECT 
         a.id,
         a.title,
         aa.completed_at AS submitted_at,
-        aa.score AS percentage,
+        (SUM(sa.score) / SUM(gq.marks) * 100) AS percentage,
         EXTRACT(EPOCH FROM (aa.completed_at - aa.started_at)) AS time_taken
       FROM assessment_attempts aa
       JOIN assessments a ON aa.assessment_id = a.id
+      JOIN student_answers sa ON sa.attempt_id = aa.id
+      JOIN generated_questions gq ON sa.question_id = gq.id
       WHERE aa.student_id = $1 
         AND aa.completed_at IS NOT NULL
         AND aa.status = 'completed'
+      GROUP BY a.id, a.title, aa.completed_at, aa.started_at
       ORDER BY aa.completed_at ASC
     `, [studentId]);
 
@@ -92,7 +95,7 @@ export const getStudentAnalytics = async (studentId) => {
         gq.marks,
         CASE 
           WHEN sa.score >= gq.marks * 0.8 THEN 'strength'
-          WHEN sa.score <= gq.marks * 0.4 THEN 'weakness'
+          WHEN sa.score <= gq.marks * 0.6 THEN 'weakness'
           ELSE 'average'
         END as performance_category
       FROM student_answers sa
@@ -110,7 +113,6 @@ export const getStudentAnalytics = async (studentId) => {
     questionAnalysis.rows.forEach(q => {
       const topic = q.question_type || 'General';
       const questionType = q.question_type || 'multiple_choice';
-      const difficulty = 'medium';
 
       if (!subjectBreakdown[topic]) {
         subjectBreakdown[topic] = {
@@ -126,7 +128,7 @@ export const getStudentAnalytics = async (studentId) => {
         strengths.push({
           topic,
           question_type: questionType,
-          difficulty,
+          difficulty: 'medium',
           score: q.scored_marks,
           max_score: q.marks
         });
@@ -134,7 +136,7 @@ export const getStudentAnalytics = async (studentId) => {
         weaknesses.push({
           topic,
           question_type: questionType,
-          difficulty,
+          difficulty: 'medium',
           score: q.scored_marks,
           max_score: q.marks
         });
@@ -203,17 +205,27 @@ export const getPerformanceOverTime = async (studentId, timeRange) => {
 
     const query = `
       SELECT 
-        DATE(aa.completed_at) as date,
-        AVG(aa.score) as average_score,
-        COUNT(*) as assessments_taken,
-        SUM(EXTRACT(EPOCH FROM (aa.completed_at - aa.started_at))) as total_time
-      FROM assessment_attempts aa
-      JOIN assessments a ON aa.assessment_id = a.id
-      WHERE aa.student_id = $1 
-        AND aa.completed_at IS NOT NULL
-        AND aa.status = 'completed'
-        ${dateFilter}
-      GROUP BY DATE(aa.completed_at)
+        date,
+        AVG(percentage) as average_score,
+        assessments_taken,
+        total_time
+      FROM (
+        SELECT 
+          DATE(aa.completed_at) as date,
+          (SUM(sa.score) / SUM(gq.marks) * 100) as percentage,
+          COUNT(DISTINCT aa.id) as assessments_taken,
+          SUM(EXTRACT(EPOCH FROM (aa.completed_at - aa.started_at))) as total_time
+        FROM assessment_attempts aa
+        JOIN assessments a ON aa.assessment_id = a.id
+        JOIN student_answers sa ON sa.attempt_id = aa.id
+        JOIN generated_questions gq ON sa.question_id = gq.id
+        WHERE aa.student_id = $1 
+          AND aa.completed_at IS NOT NULL
+          AND aa.status = 'completed'
+          ${dateFilter}
+        GROUP BY aa.id, DATE(aa.completed_at)
+      ) as sub
+      GROUP BY date, assessments_taken, total_time
       ORDER BY date ASC
     `;
 
@@ -226,13 +238,150 @@ export const getPerformanceOverTime = async (studentId, timeRange) => {
 };
 
 /**
- * Get student's learning recommendations
+ * Get student's completed assessments list
+ * @param {number} studentId - Student ID
+ * @returns {Array} List of assessments
+ */
+export const getStudentAssessmentsList = async (studentId) => {
+  try {
+    const query = `
+      SELECT 
+        a.id,
+        a.title,
+        (SUM(sa.score) / SUM(gq.marks) * 100) AS percentage,
+        aa.completed_at AS date
+      FROM assessment_attempts aa
+      JOIN assessments a ON aa.assessment_id = a.id
+      JOIN student_answers sa ON sa.attempt_id = aa.id
+      JOIN generated_questions gq ON sa.question_id = gq.id
+      WHERE aa.student_id = $1 
+        AND aa.completed_at IS NOT NULL
+        AND aa.status = 'completed'
+      GROUP BY a.id, a.title, aa.completed_at
+      ORDER BY aa.completed_at DESC
+    `;
+    const result = await db.query(query, [studentId]);
+    return result.rows;
+  } catch (error) {
+    console.error("❌ Error getting student assessments list:", error);
+    throw error;
+  }
+};
+
+/**
+ * Get analytics for a specific assessment
+ * @param {number} studentId - Student ID
+ * @param {number} assessmentId - Assessment ID
+ * @returns {Object} Assessment analytics
+ */
+export const getAssessmentAnalytics = async (studentId, assessmentId) => {
+  try {
+    const attempt = await db.query(`
+      SELECT 
+        aa.id as attempt_id,
+        EXTRACT(EPOCH FROM (aa.completed_at - aa.started_at)) as time_taken,
+        a.title as assessment_title
+      FROM assessment_attempts aa
+      JOIN assessments a ON aa.assessment_id = a.id
+      WHERE aa.student_id = $1 
+        AND aa.assessment_id = $2
+        AND aa.completed_at IS NOT NULL
+        AND aa.status = 'completed'
+      ORDER BY aa.completed_at DESC
+      LIMIT 1
+    `, [studentId, assessmentId]);
+
+    if (attempt.rows.length === 0) {
+      throw new Error('No completed attempt found for this assessment');
+    }
+
+    const { attempt_id, time_taken, assessment_title } = attempt.rows[0];
+
+    const totalStats = await db.query(`
+      SELECT 
+        SUM(sa.score) as total_score,
+        SUM(gq.marks) as total_marks
+      FROM student_answers sa
+      JOIN generated_questions gq ON sa.question_id = gq.id
+      WHERE sa.attempt_id = $1
+    `, [attempt_id]);
+
+    const { total_score, total_marks } = totalStats.rows[0] || { total_score: 0, total_marks: 0 };
+    const percentage = total_marks > 0 ? Math.round((total_score / total_marks) * 100) : 0;
+
+    const weak_questions = await db.query(`
+      SELECT 
+        gq.question_type,
+        gq.question_text,
+        sa.score / gq.marks as performance,
+        sa.score as scored_marks,
+        gq.marks
+      FROM student_answers sa
+      JOIN generated_questions gq ON sa.question_id = gq.id
+      WHERE sa.attempt_id = $1
+        AND sa.score <= gq.marks * 0.6
+      ORDER BY performance ASC
+    `, [attempt_id]);
+
+    const client = await getCreationModel();
+    const prompt = `You are an educational AI assistant. Generate learning recommendations for the assessment "${assessment_title}" with score ${percentage}%. Weak questions: ${JSON.stringify(weak_questions.rows)}. If no weak questions, provide general recommendations for improvement. Respond ONLY with valid JSON: { "weak_areas": [{ "topic": "descriptive topic", "performance": number, "suggestion": "detailed suggestion" }], "study_plan": { "daily_practice": [{ "topic": "string", "focus": "string", "time_allocation": "string" }], "weekly_review": [{ "topic": "string", "activity": "string", "goal": "string" }] } }. Ensure JSON is parseable.`;
+    let responseText = await generateContent(client, prompt, {
+      generationConfig: { maxOutputTokens: 1000, temperature: 0.7, response_mime_type: 'application/json' },
+      thinkingConfig: { thinkingBudget: 0 },
+    });
+
+    responseText = responseText.replace(/^```json\n/, '').replace(/\n```$/, '').trim();
+
+    let recommendations = {
+      weak_areas: [],
+      study_plan: { daily_practice: [], weekly_review: [] }
+    };
+
+    try {
+      recommendations = JSON.parse(responseText);
+      if (!recommendations.weak_areas || !Array.isArray(recommendations.weak_areas) ||
+          !recommendations.study_plan || !recommendations.study_plan.daily_practice ||
+          !recommendations.study_plan.weekly_review) {
+        throw new Error('Invalid AI response structure');
+      }
+    } catch (parseError) {
+      console.error("❌ AI recommendation parsing error:", parseError);
+      console.log("Debug: Raw response text:", responseText);
+      console.log("Falling back to default recommendations");
+      recommendations = {
+        weak_areas: weak_questions.rows.map(area => ({
+          topic: area.question_type || 'General',
+          performance: Math.round(area.performance * 100),
+          suggestion: getSuggestionForArea(area.question_type, 'medium')
+        })),
+        study_plan: generateStudyPlan(weak_questions.rows.map(area => ({
+          topic: area.question_type || 'General',
+          performance: Math.round(area.performance * 100),
+          suggestion: getSuggestionForArea(area.question_type, 'medium')
+        })))
+      };
+    }
+
+    return {
+      assessment_title,
+      score: percentage,
+      time_taken: Math.floor(time_taken), // Fix decimal
+      weak_areas: recommendations.weak_areas,
+      recommendations: recommendations
+    };
+  } catch (error) {
+    console.error("❌ Error getting assessment analytics:", error);
+    throw error;
+  }
+};
+
+/**
+ * Get student's learning recommendations (aggregate)
  * @param {number} studentId - Student ID
  * @returns {Object} Learning recommendations
  */
 export const getLearningRecommendations = async (studentId) => {
   try {
-    // Get weak areas
     const weakAreas = await db.query(`
       SELECT 
         gq.question_type,
@@ -244,50 +393,63 @@ export const getLearningRecommendations = async (studentId) => {
       WHERE aa.student_id = $1 
         AND aa.completed_at IS NOT NULL
         AND sa.score IS NOT NULL
-        AND sa.score < gq.marks * 0.6
+        AND sa.score <= gq.marks * 0.6
       GROUP BY gq.question_type
       ORDER BY average_performance ASC
       LIMIT 5
     `, [studentId]);
 
-    // Use AI to generate personalized suggestions
+    let recommendations = {
+      weak_areas: [],
+      study_plan: { daily_practice: [], weekly_review: [] },
+      next_assessments: await getRecommendedAssessments(studentId)
+    };
+
+    if (weakAreas.rows.length === 0) {
+      return recommendations;
+    }
+
     const client = await getCreationModel();
-    const prompt = `Generate learning recommendations for a student with weak areas: ${JSON.stringify(weakAreas.rows)}. Provide a JSON object with weak_areas (array of objects with topic, performance, suggestion) and study_plan (object with daily_practice and weekly_review arrays).`;
-    const responseText = await generateContent(client, prompt, {
-      generationConfig: { maxOutputTokens: 1000, temperature: 0.5 },
+    const prompt = `You are an educational AI assistant. Generate learning recommendations for a student with the following weak areas: ${JSON.stringify(weakAreas.rows)}. Respond ONLY with a valid JSON object in this exact format: { "weak_areas": [{ "topic": "string", "performance": number, "suggestion": "string" }], "study_plan": { "daily_practice": [{ "topic": "string", "focus": "string", "time_allocation": "string" }], "weekly_review": [{ "topic": "string", "activity": "string", "goal": "string" }] } }. Ensure the JSON is parseable and matches the structure exactly.`;
+    let responseText = await generateContent(client, prompt, {
+      generationConfig: { maxOutputTokens: 1000, temperature: 0.5, response_mime_type: 'application/json' },
       thinkingConfig: { thinkingBudget: 0 },
     });
 
-    console.log(`Debug: Full response text: ${responseText.substring(0, 100)}${responseText.length > 100 ? "..." : ""}`);
-    let aiRecommendations = {};
+    responseText = responseText.replace(/^```json\n/, '').replace(/\n```$/, '').trim();
+
     try {
-      // Extract JSON from response text
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (jsonMatch && jsonMatch[0]) {
-        aiRecommendations = JSON.parse(jsonMatch[0]);
-      } else {
-        console.warn("No valid JSON found in response, using fallback plan");
-        aiRecommendations = { weak_areas: [], study_plan: {} };
+      const aiRecommendations = JSON.parse(responseText);
+      if (!aiRecommendations.weak_areas || !Array.isArray(aiRecommendations.weak_areas) ||
+          !aiRecommendations.study_plan || !aiRecommendations.study_plan.daily_practice ||
+          !aiRecommendations.study_plan.weekly_review) {
+        throw new Error('Invalid AI response structure');
       }
+      recommendations = {
+        weak_areas: aiRecommendations.weak_areas,
+        study_plan: aiRecommendations.study_plan,
+        next_assessments: await getRecommendedAssessments(studentId)
+      };
     } catch (parseError) {
       console.error("❌ AI recommendation parsing error:", parseError);
+      console.log("Debug: Raw response text:", responseText);
       console.log("Falling back to default recommendations");
-      aiRecommendations = { weak_areas: [], study_plan: {} };
+      recommendations = {
+        weak_areas: weakAreas.rows.map(area => ({
+          topic: area.question_type || 'General',
+          performance: Math.round(area.average_performance * 100),
+          suggestion: getSuggestionForArea(area.question_type, 'medium')
+        })),
+        study_plan: generateStudyPlan(weakAreas.rows.map(area => ({
+          topic: area.question_type || 'General',
+          performance: Math.round(area.average_performance * 100),
+          suggestion: getSuggestionForArea(area.question_type, 'medium')
+        }))),
+        next_assessments: await getRecommendedAssessments(studentId)
+      };
     }
 
-    const recommendations = weakAreas.rows.map(area => ({
-      topic: area.question_type || 'General',
-      question_type: area.question_type,
-      difficulty: 'medium',
-      performance: Math.round(area.average_performance * 100),
-      suggestion: aiRecommendations.weak_areas?.find(r => r.topic === area.question_type)?.suggestion || getSuggestionForArea(area.question_type, 'medium')
-    }));
-
-    return {
-      weak_areas: recommendations,
-      study_plan: aiRecommendations.study_plan || generateStudyPlan(recommendations),
-      next_assessments: await getRecommendedAssessments(studentId)
-    };
+    return recommendations;
   } catch (error) {
     console.error("❌ Error getting learning recommendations:", error);
     throw error;
@@ -318,10 +480,20 @@ const getSuggestionForArea = (questionType, difficulty) => {
       easy: "Practice basic essay structure and organization",
       medium: "Focus on argument development and evidence integration",
       hard: "Work on critical analysis and synthesis of complex ideas"
+    },
+    match_the_column: {
+      easy: "Practice matching basic terms and definitions",
+      medium: "Focus on understanding relationships between concepts",
+      hard: "Work on complex matching with multiple possibilities"
+    },
+    general: {
+      easy: "Review basic concepts and practice simple questions",
+      medium: "Focus on core principles and standard problems",
+      hard: "Explore advanced topics and challenging scenarios"
     }
   };
 
-  return suggestions[questionType]?.[difficulty] || "Practice more questions in this area";
+  return suggestions[questionType?.toLowerCase()]?.[difficulty] || suggestions.general[difficulty] || "Practice more questions in this area";
 };
 
 /**

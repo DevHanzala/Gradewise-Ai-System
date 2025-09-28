@@ -8,6 +8,9 @@ const useStudentAnalyticsStore = create((set, get) => ({
   analytics: null,
   performance: [],
   recommendations: null,
+  assessments: [],
+  selectedAssessment: null,
+  selectedAssessmentDetails: null,
   loading: false,
   error: null,
 
@@ -77,23 +80,80 @@ const useStudentAnalyticsStore = create((set, get) => ({
     }
   },
 
-  downloadReport: async (format = "csv") => {
+  fetchAssessments: async () => {
     set({ loading: true, error: null });
     try {
       const token = localStorage.getItem("token");
       if (!token) throw new Error("No authentication token found");
-      const response = await axios.get(`${API_URL}/student-analytics/report?format=${format}`, {
+      const response = await axios.get(`${API_URL}/student-analytics/assessments`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.data.success) {
+        set({ assessments: response.data.data || [] });
+      } else {
+        throw new Error(response.data.message || "Failed to fetch assessments");
+      }
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || error.message || "Failed to fetch assessments";
+      set({ error: errorMessage });
+      toast.error(errorMessage);
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  fetchAssessmentDetails: async (id) => {
+    set({ loading: true, error: null });
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) throw new Error("No authentication token found");
+      const response = await axios.get(`${API_URL}/student-analytics/assessment/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.data.success) {
+        set({ selectedAssessmentDetails: response.data.data || {} });
+      } else {
+        throw new Error(response.data.message || "Failed to fetch assessment details");
+      }
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || error.message || "Failed to fetch assessment details";
+      set({ error: errorMessage });
+      toast.error(errorMessage);
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  setSelectedAssessment: (id) => {
+    set({ selectedAssessment: id });
+    if (id) {
+      get().fetchAssessmentDetails(id);
+    } else {
+      set({ selectedAssessmentDetails: null });
+    }
+  },
+
+  downloadReport: async (assessmentId = null) => {
+    set({ loading: true, error: null });
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) throw new Error("No authentication token found");
+      let url = `${API_URL}/student-analytics/report?format=csv`;
+      if (assessmentId) {
+        url += `&assessmentId=${assessmentId}`;
+      }
+      const response = await axios.get(url, {
         headers: { Authorization: `Bearer ${token}` },
         responseType: "blob",
       });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const blobUrl = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute("download", `student-analytics-report.${format}`);
+      link.href = blobUrl;
+      link.setAttribute("download", `student-report${assessmentId ? `-${assessmentId}` : ''}.csv`);
       document.body.appendChild(link);
       link.click();
       link.remove();
-      window.URL.revokeObjectURL(url);
+      window.URL.revokeObjectURL(blobUrl);
       toast.success("Report downloaded successfully!");
     } catch (error) {
       const errorMessage = error.response?.data?.message || error.message || "Failed to download report";
