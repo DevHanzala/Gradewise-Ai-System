@@ -76,6 +76,13 @@ function InstructorDashboard() {
       link: "/instructor/students",
       color: "bg-yellow-500 hover:bg-yellow-600",
     },
+    {
+      title: "View Analytics",
+      description: "Analyze assessment performance",
+      icon: "📊",
+      link: "/instructor/assessments/:assessmentId/analytics", // Placeholder, handled by AssessmentAnalytics
+      color: "bg-indigo-500 hover:bg-indigo-600",
+    },
   ];
 
   return (
@@ -123,7 +130,7 @@ function InstructorDashboard() {
                 <h2 className="text-xl font-semibold text-gray-900">Quick Actions</h2>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                   {quickActions.map((action, index) => (
                     <Link
                       key={index}

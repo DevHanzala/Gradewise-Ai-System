@@ -8,12 +8,13 @@ import resourceRoutes from "./routes/resourceRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import studentAnalyticsRoutes from "./routes/studentAnalyticsRoutes.js";
 import takingRoutes from "./routes/takingRoutes.js";
+import instructorAssessmentAnalyticsRoutes from "./routes/instructorAssessmentAnalyticsRoutes.js";
 import { errorHandler, notFound } from "./middleware/errorMiddleware.js";
 import fs from "fs/promises";
 import path from "path";
 
-dotenv.config({ path: path.resolve(process.cwd(), '.env') }); // Explicit path to .env in root
-console.log("GEMINI_CREATION_API_KEY loaded:", process.env.GEMINI_CREATION_API_KEY ? "Yes" : "No"); // Debug log
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+console.log("GEMINI_CREATION_API_KEY loaded:", process.env.GEMINI_CREATION_API_KEY ? "Yes" : "No");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -60,6 +61,7 @@ app.use("/api/resources", resourceRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/student-analytics", studentAnalyticsRoutes);
 app.use("/api/taking", takingRoutes);
+app.use("/api/instructor-analytics", instructorAssessmentAnalyticsRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {
