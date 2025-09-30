@@ -1,81 +1,82 @@
-import { useState, useEffect } from "react"
-import useAuthStore from "../../store/authStore.js"
-import { Card, CardHeader, CardContent } from "../../components/ui/Card.jsx"
-import LoadingSpinner from "../../components/ui/LoadingSpinner.jsx"
-import Modal from "../../components/ui/Modal.jsx"
-import Navbar from "../../components/Navbar.jsx"
-import Footer from "../../components/Footer.jsx"
+import { useState, useEffect } from "react";
+import useAuthStore from "../../store/authStore.js";
+import { Card, CardHeader, CardContent } from "../../components/ui/Card.jsx";
+import LoadingSpinner from "../../components/ui/LoadingSpinner.jsx";
+import Modal from "../../components/ui/Modal.jsx";
+import Navbar from "../../components/Navbar.jsx";
+import Footer from "../../components/Footer.jsx";
+import { FaUser, FaChartBar, FaUsers, FaCheckCircle, FaClock } from "react-icons/fa";
 
 function AdminDashboard() {
-  const { user, getUsers, changeUserRole } = useAuthStore()
-  const [users, setUsers] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" })
-  const [roleChangeLoading, setRoleChangeLoading] = useState(null)
+  const { user, getUsers, changeUserRole } = useAuthStore();
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" });
+  const [roleChangeLoading, setRoleChangeLoading] = useState(null);
 
   useEffect(() => {
-    fetchUsers()
-  }, [])
+    fetchUsers();
+  }, []);
 
   const fetchUsers = async () => {
     try {
-      setLoading(true)
-      const response = await getUsers()
-      setUsers(response.users)
+      setLoading(true);
+      const response = await getUsers();
+      setUsers(response.users);
     } catch (error) {
-      showModal("error", "Error", "Failed to fetch users. Please try again.")
+      showModal("error", "Error", "Failed to fetch users. Please try again.");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const showModal = (type, title, message) => {
-    setModal({ isOpen: true, type, title, message })
-  }
+    setModal({ isOpen: true, type, title, message });
+  };
 
   const handleRoleChange = async (userId, newRole, userName) => {
     try {
-      setRoleChangeLoading(userId)
-      await changeUserRole({ userId, newRole })
-      await fetchUsers()
-      showModal("success", "Success", `Successfully changed ${userName}'s role to ${newRole}.`)
+      setRoleChangeLoading(userId);
+      await changeUserRole({ userId, newRole });
+      await fetchUsers();
+      showModal("success", "Success", `Successfully changed ${userName}'s role to ${newRole}.`);
     } catch (error) {
-      showModal("error", "Error", `Failed to change user role. ${error.response?.data?.message || "Please try again."}`)
+      showModal("error", "Error", `Failed to change user role. ${error.response?.data?.message || "Please try again."}`);
     } finally {
-      setRoleChangeLoading(null)
+      setRoleChangeLoading(null);
     }
-  }
+  };
 
   const getUserStats = () => {
     const stats = users.reduce(
       (acc, user) => {
-        acc[user.role] = (acc[user.role] || 0) + 1
-        acc.verified += user.verified ? 1 : 0
-        acc.unverified += user.verified ? 0 : 1
-        return acc
+        acc[user.role] = (acc[user.role] || 0) + 1;
+        acc.verified += user.verified ? 1 : 0;
+        acc.unverified += user.verified ? 0 : 1;
+        return acc;
       },
       { admin: 0, instructor: 0, student: 0, verified: 0, unverified: 0 },
-    )
-    return stats
-  }
+    );
+    return stats;
+  };
 
-  const stats = getUserStats()
+  const stats = getUserStats();
 
   const getRoleBadgeColor = (role) => {
     switch (role) {
       case "admin":
-        return "bg-red-100 text-red-800"
+        return "bg-red-100 text-red-800";
       case "instructor":
-        return "bg-blue-100 text-blue-800"
+        return "bg-blue-100 text-blue-800";
       case "student":
-        return "bg-green-100 text-green-800"
+        return "bg-green-100 text-green-800";
       default:
-        return "bg-gray-100 text-gray-800"
+        return "bg-gray-100 text-gray-800";
     }
-  }
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       <Navbar />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -87,43 +88,55 @@ function AdminDashboard() {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
-          <Card>
+          <Card className="shadow-lg bg-white rounded-xl">
             <CardContent className="text-center">
-              <div className="text-3xl font-bold text-blue-600">{users.length}</div>
+              <div className="text-3xl font-bold text-blue-600 flex items-center justify-center">
+                <FaUsers className="mr-2" /> {users.length}
+              </div>
               <div className="text-gray-600">Total Users</div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="shadow-lg bg-white rounded-xl">
             <CardContent className="text-center">
-              <div className="text-3xl font-bold text-red-600">{stats.admin}</div>
+              <div className="text-3xl font-bold text-red-600 flex items-center justify-center">
+                <FaUser className="mr-2" /> {stats.admin}
+              </div>
               <div className="text-gray-600">Admins</div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="shadow-lg bg-white rounded-xl">
             <CardContent className="text-center">
-              <div className="text-3xl font-bold text-blue-600">{stats.instructor}</div>
+              <div className="text-3xl font-bold text-blue-600 flex items-center justify-center">
+                <FaUser className="mr-2" /> {stats.instructor}
+              </div>
               <div className="text-gray-600">Instructors</div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="shadow-lg bg-white rounded-xl">
             <CardContent className="text-center">
-              <div className="text-3xl font-bold text-green-600">{stats.student}</div>
+              <div className="text-3xl font-bold text-green-600 flex items-center justify-center">
+                <FaUser className="mr-2" /> {stats.student}
+              </div>
               <div className="text-gray-600">Students</div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="shadow-lg bg-white rounded-xl">
             <CardContent className="text-center">
-              <div className="text-3xl font-bold text-green-600">{stats.verified}</div>
+              <div className="text-3xl font-bold text-green-600 flex items-center justify-center">
+                <FaCheckCircle className="mr-2" /> {stats.verified}
+              </div>
               <div className="text-gray-600">Verified</div>
             </CardContent>
           </Card>
         </div>
 
         {/* Users Table */}
-        <Card>
-          <CardHeader>
+        <Card className="shadow-lg bg-white rounded-xl">
+          <CardHeader className="bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-t-xl">
             <div className="flex justify-between items-center">
-              <h2 className="text-xl font-semibold text-gray-900">All Users</h2>
+              <h2 className="text-xl font-semibold flex items-center">
+                <FaUsers className="mr-2" /> All Users
+              </h2>
               <button
                 onClick={fetchUsers}
                 className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition duration-200"
@@ -144,19 +157,19 @@ function AdminDashboard() {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        User
+                        <FaUser className="mr-2 inline" /> User
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Role
+                        <FaUser className="mr-2 inline" /> Role
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
+                        <FaCheckCircle className="mr-2 inline" /> Status
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Joined
+                        <FaClock className="mr-2 inline" /> Joined
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
+                        <FaChartBar className="mr-2 inline" /> Actions
                       </th>
                     </tr>
                   </thead>
@@ -244,7 +257,7 @@ function AdminDashboard() {
         {modal.message}
       </Modal>
     </div>
-  )
+  );
 }
 
-export default AdminDashboard
+export default AdminDashboard;

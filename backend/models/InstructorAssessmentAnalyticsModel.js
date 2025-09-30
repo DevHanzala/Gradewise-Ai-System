@@ -27,18 +27,7 @@ export const getInstructorExecutedAssessmentsModel = async (instructorId) => {
  */
 export const getAssessmentStudentsModel = async (assessmentId, instructorId) => {
   try {
-    // Calculate total max score from generated_questions
-    const maxScoreResult = await db.query(
-      `SELECT COALESCE(SUM(marks), 0) as max_score
-       FROM generated_questions gq
-       JOIN assessment_attempts aa ON aa.id = gq.attempt_id
-       JOIN assessments a ON a.id = aa.assessment_id
-       WHERE a.id = $1 AND a.instructor_id = $2`,
-      [assessmentId, instructorId]
-    );
-    const maxScore = maxScoreResult.rows[0].max_score || 0;
-
-    // Fetch student data with calculated metrics
+    // Fetch student data with calculated metrics, including max_score per attempt
     const result = await db.query(
       `SELECT aa.student_id, u.name, aa.started_at, aa.completed_at, 
               COALESCE(SUM(sa.score), 0) as obtained_score, aa.status,
@@ -47,7 +36,10 @@ export const getAssessmentStudentsModel = async (assessmentId, instructorId) => 
                WHERE sa2.attempt_id = aa.id) as total_questions,
               (SELECT COUNT(*) 
                FROM student_answers sa2 
-               WHERE sa2.attempt_id = aa.id AND sa2.is_correct = true) as correct_answers
+               WHERE sa2.attempt_id = aa.id AND sa2.is_correct = true) as correct_answers,
+              (SELECT COALESCE(SUM(gq.marks), 0) 
+               FROM generated_questions gq 
+               WHERE gq.attempt_id = aa.id) as max_score
        FROM assessment_attempts aa
        JOIN assessments a ON a.id = aa.assessment_id
        JOIN users u ON u.id = aa.student_id
@@ -63,7 +55,7 @@ export const getAssessmentStudentsModel = async (assessmentId, instructorId) => 
       const timeDiff = row.completed_at ? Math.round((new Date(row.completed_at) - new Date(row.started_at)) / 1000) : 0;
       const minutes = Math.floor(timeDiff / 60);
       const seconds = timeDiff % 60;
-      const percentage = maxScore > 0 ? (Number(row.obtained_score) / maxScore) * 100 : 0;
+      const percentage = row.max_score > 0 ? (Number(row.obtained_score) / row.max_score) * 100 : 0;
       return {
         ...row,
         time_taken: timeDiff,

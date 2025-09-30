@@ -1,114 +1,115 @@
-import { useState, useEffect } from "react"
-import useAuthStore from "../../store/authStore.js"
-import { Card, CardHeader, CardContent } from "../../components/ui/Card.jsx"
-import LoadingSpinner from "../../components/ui/LoadingSpinner.jsx"
-import Modal from "../../components/ui/Modal.jsx"
-import Navbar from "../../components/Navbar.jsx"
-import Footer from "../../components/Footer.jsx"
+import { useState, useEffect } from "react";
+import useAuthStore from "../../store/authStore.js";
+import { Card, CardHeader, CardContent } from "../../components/ui/Card.jsx";
+import LoadingSpinner from "../../components/ui/LoadingSpinner.jsx";
+import Modal from "../../components/ui/Modal.jsx";
+import Navbar from "../../components/Navbar.jsx";
+import Footer from "../../components/Footer.jsx";
+import { FaUser, FaChartBar, FaUsers, FaCheckCircle, FaClock, FaArrowUp, FaArrowDown, FaTrash } from "react-icons/fa";
 
 function SuperAdminDashboard() {
-  const { user, getUsers, changeUserRole, deleteUser } = useAuthStore()
-  const [users, setUsers] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" })
-  const [actionLoading, setActionLoading] = useState(null)
+  const { user, getUsers, changeUserRole, deleteUser } = useAuthStore();
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" });
+  const [actionLoading, setActionLoading] = useState(null);
 
   useEffect(() => {
-    fetchUsers()
-  }, [])
+    fetchUsers();
+  }, []);
 
   const fetchUsers = async () => {
     try {
-      setLoading(true)
-      const response = await getUsers()
-      setUsers(response.users)
+      setLoading(true);
+      const response = await getUsers();
+      setUsers(response.users);
     } catch (error) {
-      showModal("error", "Error", "Failed to fetch users. Please try again.")
+      showModal("error", "Error", "Failed to fetch users. Please try again.");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const showModal = (type, title, message) => {
-    setModal({ isOpen: true, type, title, message })
-  }
+    setModal({ isOpen: true, type, title, message });
+  };
 
   const handleRoleChange = async (userId, newRole, userName, userEmail) => {
     try {
-      setActionLoading(`role-${userId}`)
-      await changeUserRole({ userId, newRole, userEmail })
-      await fetchUsers()
-      showModal("success", "Success", `Successfully changed ${userName}'s role to ${newRole}.`)
+      setActionLoading(`role-${userId}`);
+      await changeUserRole({ userId, newRole, userEmail });
+      await fetchUsers();
+      showModal("success", "Success", `Successfully changed ${userName}'s role to ${newRole}.`);
     } catch (error) {
-      showModal("error", "Error", `Failed to change user role. ${error.response?.data?.message || "Please try again."}`)
+      showModal("error", "Error", `Failed to change user role. ${error.response?.data?.message || "Please try again."}`);
     } finally {
-      setActionLoading(null)
+      setActionLoading(null);
     }
-  }
+  };
 
   const handleDeleteUser = async (userId, userName) => {
     if (!window.confirm(`Are you sure you want to delete ${userName}? This action cannot be undone.`)) {
-      return
+      return;
     }
 
     try {
-      setActionLoading(`delete-${userId}`)
-      await deleteUser(userId)
-      await fetchUsers()
-      showModal("success", "Success", `Successfully deleted ${userName}.`)
+      setActionLoading(`delete-${userId}`);
+      await deleteUser(userId);
+      await fetchUsers();
+      showModal("success", "Success", `Successfully deleted ${userName}.`);
     } catch (error) {
-      showModal("error", "Error", `Failed to delete user. ${error.response?.data?.message || "Please try again."}`)
+      showModal("error", "Error", `Failed to delete user. ${error.response?.data?.message || "Please try again."}`);
     } finally {
-      setActionLoading(null)
+      setActionLoading(null);
     }
-  }
+  };
 
   const getUserStats = () => {
     const stats = users.reduce(
       (acc, user) => {
-        acc[user.role] = (acc[user.role] || 0) + 1
-        acc.verified += user.verified ? 1 : 0
-        acc.unverified += user.verified ? 0 : 1
-        return acc
+        acc[user.role] = (acc[user.role] || 0) + 1;
+        acc.verified += user.verified ? 1 : 0;
+        acc.unverified += user.verified ? 0 : 1;
+        return acc;
       },
       { admin: 0, instructor: 0, student: 0, verified: 0, unverified: 0 },
-    )
-    return stats
-  }
+    );
+    return stats;
+  };
 
-  const stats = getUserStats()
+  const stats = getUserStats();
 
   const getRoleBadgeColor = (role) => {
     switch (role) {
       case "super_admin":
-        return "bg-purple-100 text-purple-800"
+        return "bg-purple-100 text-purple-800";
       case "admin":
-        return "bg-red-100 text-red-800"
+        return "bg-red-100 text-red-800";
       case "instructor":
-        return "bg-blue-100 text-blue-800"
+        return "bg-blue-100 text-blue-800";
       case "student":
-        return "bg-green-100 text-green-800"
+        return "bg-green-100 text-green-800";
       default:
-        return "bg-gray-100 text-gray-800"
+        return "bg-gray-100 text-gray-800";
     }
-  }
+  };
 
   const getProviderBadgeColor = (provider) => {
     switch (provider) {
       case "google":
-        return "bg-blue-100 text-blue-800"
+        return "bg-blue-100 text-blue-800";
       case "manual":
-        return "bg-gray-100 text-gray-800"
+        return "bg-gray-100 text-gray-800";
       default:
-        return "bg-gray-100 text-gray-800"
+        return "bg-gray-100 text-gray-800";
     }
-  }
+  };
 
   // Super Admin can only see students and admins (not other super_admins)
-  const filteredUsers = users.filter((u) => u.role !== "super_admin")
+  const filteredUsers = users.filter((u) => u.role !== "super_admin");
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       <Navbar />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -124,43 +125,55 @@ function SuperAdminDashboard() {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
-          <Card>
+          <Card className="shadow-lg bg-white rounded-xl">
             <CardContent className="text-center">
-              <div className="text-3xl font-bold text-purple-600">{filteredUsers.length}</div>
+              <div className="text-3xl font-bold text-purple-600 flex items-center justify-center">
+                <FaUsers className="mr-2" /> {filteredUsers.length}
+              </div>
               <div className="text-gray-600">Total Users</div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="shadow-lg bg-white rounded-xl">
             <CardContent className="text-center">
-              <div className="text-3xl font-bold text-red-600">{stats.admin}</div>
+              <div className="text-3xl font-bold text-red-600 flex items-center justify-center">
+                <FaUser className="mr-2" /> {stats.admin}
+              </div>
               <div className="text-gray-600">Admins</div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="shadow-lg bg-white rounded-xl">
             <CardContent className="text-center">
-              <div className="text-3xl font-bold text-blue-600">{stats.instructor}</div>
+              <div className="text-3xl font-bold text-blue-600 flex items-center justify-center">
+                <FaUser className="mr-2" /> {stats.instructor}
+              </div>
               <div className="text-gray-600">Instructors</div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="shadow-lg bg-white rounded-xl">
             <CardContent className="text-center">
-              <div className="text-3xl font-bold text-green-600">{stats.student}</div>
+              <div className="text-3xl font-bold text-green-600 flex items-center justify-center">
+                <FaUser className="mr-2" /> {stats.student}
+              </div>
               <div className="text-gray-600">Students</div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="shadow-lg bg-white rounded-xl">
             <CardContent className="text-center">
-              <div className="text-3xl font-bold text-green-600">{stats.verified}</div>
+              <div className="text-3xl font-bold text-green-600 flex items-center justify-center">
+                <FaCheckCircle className="mr-2" /> {stats.verified}
+              </div>
               <div className="text-gray-600">Verified</div>
             </CardContent>
           </Card>
         </div>
 
         {/* Users Table */}
-        <Card>
-          <CardHeader>
+        <Card className="shadow-lg bg-white rounded-xl">
+          <CardHeader className="bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-t-xl">
             <div className="flex justify-between items-center">
-              <h2 className="text-xl font-semibold text-gray-900">Platform Users</h2>
+              <h2 className="text-xl font-semibold flex items-center">
+                <FaUsers className="mr-2" /> Platform Users
+              </h2>
               <button
                 onClick={fetchUsers}
                 className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 transition duration-200"
@@ -181,22 +194,22 @@ function SuperAdminDashboard() {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        User
+                        <FaUser className="mr-2 inline" /> User
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Role
+                        <FaUser className="mr-2 inline" /> Role
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
+                        <FaCheckCircle className="mr-2 inline" /> Status
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Provider
+                        <FaUser className="mr-2 inline" /> Provider
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Joined
+                        <FaClock className="mr-2 inline" /> Joined
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
+                        <FaChartBar className="mr-2 inline" /> Actions
                       </th>
                     </tr>
                   </thead>
@@ -253,14 +266,7 @@ function SuperAdminDashboard() {
                                   <LoadingSpinner size="sm" />
                                 ) : (
                                   <>
-                                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M5 10l7-7m0 0l7 7m-7-7v18"
-                                      />
-                                    </svg>
+                                    <FaArrowUp className="w-4 h-4 mr-1" />
                                     Promote to Admin
                                   </>
                                 )}
@@ -281,19 +287,7 @@ function SuperAdminDashboard() {
                                     <LoadingSpinner size="sm" />
                                   ) : (
                                     <>
-                                      <svg
-                                        className="w-4 h-4 mr-1"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        viewBox="0 0 24 24"
-                                      >
-                                        <path
-                                          strokeLinecap="round"
-                                          strokeLinejoin="round"
-                                          strokeWidth={2}
-                                          d="M19 14l-7 7m0 0l-7-7m7 7V3"
-                                        />
-                                      </svg>
+                                      <FaArrowDown className="w-4 h-4 mr-1" />
                                       Demote to Student
                                     </>
                                   )}
@@ -309,19 +303,7 @@ function SuperAdminDashboard() {
                                     <LoadingSpinner size="sm" />
                                   ) : (
                                     <>
-                                      <svg
-                                        className="w-4 h-4 mr-1"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        viewBox="0 0 24 24"
-                                      >
-                                        <path
-                                          strokeLinecap="round"
-                                          strokeLinejoin="round"
-                                          strokeWidth={2}
-                                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                                        />
-                                      </svg>
+                                      <FaTrash className="w-4 h-4 mr-1" />
                                       Delete
                                     </>
                                   )}
@@ -356,7 +338,7 @@ function SuperAdminDashboard() {
         {modal.message}
       </Modal>
     </div>
-  )
+  );
 }
 
-export default SuperAdminDashboard
+export default SuperAdminDashboard;
