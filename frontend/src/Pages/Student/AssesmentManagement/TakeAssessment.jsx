@@ -7,6 +7,7 @@ import Modal from "../../../components/ui/Modal";
 import Navbar from "../../../components/Navbar";
 import Footer from "../../../components/Footer";
 import toast from "react-hot-toast";
+import { FaClock, FaQuestion, FaCheck, FaArrowLeft, FaArrowRight, FaPaperPlane } from "react-icons/fa";
 
 function TakeAssessment() {
   const { assessmentId } = useParams();
@@ -141,7 +142,7 @@ function TakeAssessment() {
   // Loading state
   if (loading && !hasStarted) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
         <Navbar />
         <div className="flex items-center justify-center h-96">
           <LoadingSpinner />
@@ -154,7 +155,7 @@ function TakeAssessment() {
   // Error state
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
         <Navbar />
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-4">Error</h1>
@@ -177,7 +178,7 @@ function TakeAssessment() {
   // Submitted state
   if (isSubmitted) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
         <Navbar />
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-4">Assessment Completed</h1>
@@ -213,18 +214,20 @@ function TakeAssessment() {
   // Pre-start language selection UI
   if (!hasStarted) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
         <Navbar />
         <div className="max-w-2xl mx-auto py-10 px-4">
-          <Card>
-            <CardHeader>
-              <h2 className="text-xl font-semibold">Start Assessment</h2>
+          <Card className="shadow-lg bg-white rounded-xl">
+            <CardHeader className="bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-t-xl">
+              <h2 className="text-xl font-semibold flex items-center">
+                <FaQuestion className="mr-2" /> Start Assessment
+              </h2>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <label className="block text-sm font-medium">Select language for AI content</label>
+                <label className="block text-sm font-medium text-gray-700">Select language for AI content</label>
                 <select
-                  className="w-full border rounded px-3 py-2"
+                  className="w-full border rounded px-3 py-2 text-gray-900"
                   value={selectedLanguage}
                   onChange={(e) => setSelectedLanguage(e.target.value)}
                 >
@@ -235,10 +238,10 @@ function TakeAssessment() {
                 </select>
                 <button
                   onClick={handleStart}
-                  className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                  className="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center justify-center"
                   disabled={loading}
                 >
-                  Start
+                  <FaCheck className="mr-2" /> Start
                 </button>
               </div>
             </CardContent>
@@ -253,25 +256,25 @@ function TakeAssessment() {
   const currentQuestion = assessmentQuestions[currentQuestionIndex];
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       <Navbar />
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Take Assessment</h1>
-          <div className="text-lg font-semibold text-gray-700">
-            Time Remaining: {Math.floor(timeRemaining / 60)}:{(timeRemaining % 60).toString().padStart(2, "0")} • Question: {questionTimeLeft}s
+          <div className="text-lg font-semibold text-gray-700 flex items-center">
+            <FaClock className="mr-2" /> Time Remaining: {Math.floor(timeRemaining / 60)}:{(timeRemaining % 60).toString().padStart(2, "0")} • Question: {questionTimeLeft}s
           </div>
         </div>
-        <Card>
-          <CardHeader>
-            <h2 className="text-xl font-semibold text-gray-900">
-              Question {currentQuestionIndex + 1} of {assessmentQuestions.length}
+        <Card className="shadow-lg bg-white rounded-xl">
+          <CardHeader className="bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-t-xl">
+            <h2 className="text-xl font-semibold flex items-center">
+              <FaQuestion className="mr-2" /> Question {currentQuestionIndex + 1} of {assessmentQuestions.length}
             </h2>
           </CardHeader>
           <CardContent>
             {currentQuestion && (
               <div className="space-y-6">
-                <p className="text-lg">{currentQuestion.question_text}</p>
+                <p className="text-lg text-gray-800">{currentQuestion.question_text}</p>
                 {currentQuestion.question_type === "multiple_choice" && (
                   <div className="space-y-2">
                     {currentQuestion.options?.map((option, index) => (
@@ -282,9 +285,9 @@ function TakeAssessment() {
                           value={option}
                           checked={currentQuestion.answer === option}
                           onChange={(e) => handleAnswerUpdate(currentQuestion.id, e.target.value)}
-                          className="h-4 w-4 text-blue-600"
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500"
                         />
-                        <span className="ml-2">{option}</span>
+                        <span className="ml-3 text-gray-700">{option}</span>
                       </label>
                     ))}
                   </div>
@@ -298,9 +301,9 @@ function TakeAssessment() {
                         value="true"
                         checked={currentQuestion.answer === "true"}
                         onChange={(e) => handleAnswerUpdate(currentQuestion.id, e.target.value)}
-                        className="h-4 w-4 text-blue-600"
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500"
                       />
-                      <span className="ml-2">True</span>
+                      <span className="ml-3 text-gray-700">True</span>
                     </label>
                     <label className="flex items-center">
                       <input
@@ -309,33 +312,40 @@ function TakeAssessment() {
                         value="false"
                         checked={currentQuestion.answer === "false"}
                         onChange={(e) => handleAnswerUpdate(currentQuestion.id, e.target.value)}
-                        className="h-4 w-4 text-blue-600"
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500"
                       />
-                      <span className="ml-2">False</span>
+                      <span className="ml-3 text-gray-700">False</span>
                     </label>
                   </div>
                 )}
                 {currentQuestion.question_type === "matching" && currentQuestion.options && Array.isArray(currentQuestion.options) && (
-                  <div className="space-y-4">
-                    {currentQuestion.options.map((option, index) => (
-                      <div key={index} className="flex items-center space-x-4">
-                        <span className="font-medium">{Object.values(option)[0]}</span>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-4">
+                      {currentQuestion.options.map((option, index) => (
+                        <div key={index} className="flex items-center">
+                          <span className="font-medium text-gray-700 w-1/2">{Object.values(option)[0]}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="space-y-4">
+                      {currentQuestion.options.map((option, index) => (
                         <select
+                          key={index}
                           value={currentQuestion.answer?.[index]?.[1] || ""}
                           onChange={(e) => {
                             const newAnswer = [...(currentQuestion.answer || currentQuestion.options)];
                             newAnswer[index][1] = e.target.value;
                             handleAnswerUpdate(currentQuestion.id, newAnswer);
                           }}
-                          className="border rounded px-2 py-1"
+                          className="w-full border rounded px-3 py-2 text-gray-900 focus:ring-blue-500 focus:border-blue-500"
                         >
                           <option value="">Select match</option>
                           {currentQuestion.options.map((opt) => (
                             <option key={JSON.stringify(opt)} value={Object.values(opt)[1]}>{Object.values(opt)[1]}</option>
                           ))}
                         </select>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
                 )}
                 {currentQuestion.question_type === "short_answer" && (
@@ -344,43 +354,45 @@ function TakeAssessment() {
                       type="text"
                       value={currentQuestion.answer || ""}
                       onChange={(e) => handleAnswerUpdate(currentQuestion.id, e.target.value)}
-                      className="w-full border rounded px-3 py-2"
+                      className="w-full border rounded px-3 py-2 text-gray-900 focus:ring-blue-500 focus:border-blue-500"
                       placeholder="Type your answer here"
                     />
                   </div>
                 )}
+                <div className="flex justify-between mt-8">
+                  <button
+                    onClick={handlePrevious}
+                    disabled={currentQuestionIndex === 0}
+                    className="px-6 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 disabled:opacity-50 flex items-center"
+                  >
+                    <FaArrowLeft className="mr-2" /> Previous
+                  </button>
+                  <button
+                    onClick={handleNext}
+                    disabled={currentQuestionIndex === assessmentQuestions.length - 1}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center"
+                  >
+                    Next <FaArrowRight className="ml-2" />
+                  </button>
+                </div>
+                <button
+                  onClick={handleSubmit}
+                  disabled={isSubmitting || !hasStarted || assessmentQuestions.filter(q => q.answer !== undefined).length < assessmentQuestions.length}
+                  className="mt-4 w-full px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                >
+                  {isSubmitting ? (
+                    <div className="flex items-center">
+                      <LoadingSpinner />
+                      <span className="ml-2">Submitting...</span>
+                    </div>
+                  ) : (
+                    <>
+                      <FaPaperPlane className="mr-2" /> Submit Assessment
+                    </>
+                  )}
+                </button>
               </div>
             )}
-            <div className="flex justify-between mt-8">
-              <button
-                onClick={handlePrevious}
-                disabled={currentQuestionIndex === 0}
-                className="px-6 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <button
-                onClick={handleNext}
-                disabled={currentQuestionIndex === assessmentQuestions.length - 1}
-                className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
-            <button
-              onClick={handleSubmit}
-              disabled={isSubmitting || !hasStarted || assessmentQuestions.filter(q => q.answer !== undefined).length < assessmentQuestions.length}
-              className="mt-4 w-full px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isSubmitting ? (
-                <div className="flex items-center justify-center">
-                  <LoadingSpinner />
-                  <span className="ml-2">Submitting...</span>
-                </div>
-              ) : (
-                "Submit Assessment"
-              )}
-            </button>
           </CardContent>
         </Card>
       </div>
