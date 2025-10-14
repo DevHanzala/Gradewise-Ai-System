@@ -65,6 +65,22 @@ export const ensureResourceChunksTable = async () => {
   }
 };
 
+// Initialize resource-related tables
+export const init = async () => {
+  try {
+    if (!pool) {
+      throw new Error("Database pool not initialized");
+    }
+    // Create tables in order to respect foreign key dependencies
+    await ensureResourcesTable();
+    await ensureResourceChunksTable();
+    console.log("✅ All resource-related tables initialized successfully");
+  } catch (error) {
+    console.error("❌ Error initializing resource tables:", error);
+    throw error;
+  }
+};
+
 export const createResource = async (resourceData) => {
   const { name, file_path, file_type, file_size, content_type, visibility, uploaded_by } = resourceData;
   const query = `

@@ -17,7 +17,7 @@ export const ensureAssessmentsTable = async () => {
         CREATE TABLE assessments (
           id SERIAL PRIMARY KEY,
           title VARCHAR(255) NOT NULL,
-          prompt TEXT NOT NULL,
+          prompt TEXT,
           external_links JSONB DEFAULT '[]',
           instructor_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
           is_published BOOLEAN DEFAULT FALSE,
@@ -30,9 +30,15 @@ export const ensureAssessmentsTable = async () => {
         CREATE INDEX idx_assessments_instructor_id ON assessments(instructor_id);
       `);
       console.log("✅ assessments table created");
+    } else {
+      await pool.query(`
+        ALTER TABLE assessments
+        ALTER COLUMN prompt DROP NOT NULL;
+      `);
+      console.log("✅ assessments table updated (prompt made optional)");
     }
   } catch (error) {
-    console.error("❌ Error creating assessments table:", error);
+    console.error("❌ Error creating/updating assessments table:", error);
     throw error;
   }
 };
@@ -54,6 +60,12 @@ export const ensureQuestionBlocksTable = async () => {
           assessment_id INTEGER REFERENCES assessments(id) ON DELETE CASCADE,
           question_type VARCHAR(50) NOT NULL,
           question_count INTEGER NOT NULL,
+          duration_per_question INTEGER NOT NULL DEFAULT 120,
+          num_options INTEGER,
+          num_first_side INTEGER,
+          num_second_side INTEGER,
+          positive_marks NUMERIC,
+          negative_marks NUMERIC,
           created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         )
@@ -62,9 +74,34 @@ export const ensureQuestionBlocksTable = async () => {
         CREATE INDEX idx_question_blocks_assessment_id ON question_blocks(assessment_id);
       `);
       console.log("✅ question_blocks table created");
+    } else {
+      console.log("Checking for missing columns or type updates in question_blocks table...");
+      await pool.query(`
+        DO $$ 
+        BEGIN
+          ALTER TABLE question_blocks
+            ADD COLUMN IF NOT EXISTS duration_per_question INTEGER NOT NULL DEFAULT 120,
+            ADD COLUMN IF NOT EXISTS num_options INTEGER,
+            ADD COLUMN IF NOT EXISTS num_first_side INTEGER,
+            ADD COLUMN IF NOT EXISTS num_second_side INTEGER,
+            ADD COLUMN IF NOT EXISTS positive_marks NUMERIC,
+            ADD COLUMN IF NOT EXISTS negative_marks NUMERIC;
+          -- Update existing columns to NUMERIC if they are still INTEGER
+          ALTER TABLE question_blocks
+            ALTER COLUMN positive_marks TYPE NUMERIC USING (positive_marks::NUMERIC),
+            ALTER COLUMN negative_marks TYPE NUMERIC USING (negative_marks::NUMERIC);
+        EXCEPTION
+          WHEN duplicate_column THEN
+            RAISE NOTICE 'Columns already exist';
+          WHEN invalid_column_reference THEN
+            RAISE NOTICE 'Column type update skipped due to invalid reference';
+        END;
+        $$;
+      `);
+      console.log("✅ question_blocks table updated with new columns and types");
     }
   } catch (error) {
-    console.error("❌ Error creating question_blocks table:", error);
+    console.error("❌ Error creating/updating question_blocks table:", error);
     throw error;
   }
 };
@@ -132,6 +169,38 @@ export const ensureEnrollmentsTable = async () => {
   }
 };
 
+export const ensureResourceChunksTable = async () => {
+  try {
+    const tableCheck = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'resource_chunks'
+      )
+    `);
+    if (!tableCheck.rows[0].exists) {
+      console.log("Creating resource_chunks table...");
+      await pool.query(`
+        CREATE TABLE resource_chunks (
+          id SERIAL PRIMARY KEY,
+          resource_id INTEGER REFERENCES resources(id) ON DELETE CASCADE,
+          chunk_text TEXT NOT NULL,
+          embedding VECTOR(384),
+          chunk_index INTEGER NOT NULL,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await pool.query(`
+        CREATE INDEX idx_resource_chunks_resource_id ON resource_chunks(resource_id);
+      `);
+      console.log("✅ resource_chunks table created");
+    }
+  } catch (error) {
+    console.error("❌ Error creating resource_chunks table:", error);
+    throw error;
+  }
+};
+
 export const createAssessment = async (assessmentData) => {
   const { title, prompt, external_links, instructor_id, is_executed = false } = assessmentData;
   const query = `
@@ -140,9 +209,8 @@ export const createAssessment = async (assessmentData) => {
     RETURNING *
   `;
   const validExternalLinks = Array.isArray(external_links) ? external_links.filter(link => link && typeof link === "string" && link.trim() !== "") : [];
-  console.log(`🔍 Creating assessment with external_links:`, validExternalLinks);
   try {
-    const { rows } = await pool.query(query, [title, prompt, JSON.stringify(validExternalLinks), instructor_id, is_executed]);
+    const { rows } = await pool.query(query, [title, prompt || null, JSON.stringify(validExternalLinks), instructor_id, is_executed]);
     console.log(`✅ Created assessment: ID=${rows[0].id}`);
     return rows[0];
   } catch (error) {
@@ -153,20 +221,37 @@ export const createAssessment = async (assessmentData) => {
 
 export const storeQuestionBlocks = async (assessmentId, questionBlocks, instructorId) => {
   try {
-    console.log(`🔍 Storing question blocks for assessment ${assessmentId} with instructorId: ${instructorId}`);
-    if (!instructorId) {
-      throw new Error("instructorId is null or undefined");
-    }
     await pool.query("DELETE FROM question_blocks WHERE assessment_id = $1", [assessmentId]);
     for (const block of questionBlocks) {
-      const { question_type, question_count } = block;
-      console.log(`🔍 Inserting question block: type=${question_type}, count=${question_count}, created_by=${instructorId}`);
+      const { question_type, question_count, duration_per_question, num_options, num_first_side, num_second_side, positive_marks, negative_marks } = block;
       await pool.query(
         `
-        INSERT INTO question_blocks (assessment_id, question_type, question_count, created_by)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO question_blocks (
+          assessment_id, 
+          question_type, 
+          question_count, 
+          duration_per_question, 
+          num_options, 
+          num_first_side, 
+          num_second_side, 
+          positive_marks, 
+          negative_marks, 
+          created_by
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         `,
-        [assessmentId, question_type, question_count, instructorId]
+        [
+          assessmentId,
+          question_type,
+          question_count,
+          duration_per_question,
+          num_options || null,
+          num_first_side || null,
+          num_second_side || null,
+          positive_marks || null,
+          negative_marks || null,
+          instructorId,
+        ]
       );
     }
     console.log(`✅ Stored ${questionBlocks.length} question blocks for assessment ${assessmentId}`);
@@ -179,22 +264,34 @@ export const storeQuestionBlocks = async (assessmentId, questionBlocks, instruct
 export const getAssessmentsByInstructor = async (instructorId) => {
   const query = `
     SELECT a.*, 
-           (SELECT json_agg(
-              json_build_object(
-                'id', qb.id,
-                'question_type', qb.question_type,
-                'question_count', qb.question_count
-              )
-           ) FROM question_blocks qb WHERE qb.assessment_id = a.id) as question_blocks,
-           (SELECT json_agg(
-              json_build_object(
-                'id', r.id,
-                'name', r.name,
-                'type', r.file_type,
-                'content_type', r.content_type,
-                'url', r.url
-              )
-           ) FROM assessment_resources ar JOIN resources r ON ar.resource_id = r.id WHERE ar.assessment_id = a.id) as resources
+           COALESCE(
+             (SELECT json_agg(
+                json_build_object(
+                  'id', qb.id,
+                  'question_type', qb.question_type,
+                  'question_count', qb.question_count,
+                  'duration_per_question', COALESCE(qb.duration_per_question, 180),
+                  'num_options', qb.num_options,
+                  'num_first_side', qb.num_first_side,
+                  'num_second_side', qb.num_second_side,
+                  'positive_marks', qb.positive_marks,
+                  'negative_marks', qb.negative_marks
+                )
+             ) FROM question_blocks qb WHERE qb.assessment_id = a.id),
+             '[]'
+           ) as question_blocks,
+           COALESCE(
+             (SELECT json_agg(
+                json_build_object(
+                  'id', r.id,
+                  'name', r.name,
+                  'type', r.file_type,
+                  'content_type', r.content_type,
+                  'url', r.url
+                )
+             ) FROM assessment_resources ar JOIN resources r ON ar.resource_id = r.id WHERE ar.assessment_id = a.id),
+             '[]'
+           ) as resources
     FROM assessments a
     WHERE a.instructor_id = $1
     ORDER BY a.created_at DESC
@@ -219,26 +316,36 @@ export const getAssessmentById = async (assessment_id, user_id, user_role) => {
       throw new Error("Invalid assessment ID");
     }
     const id = parseInt(assessment_id);
-
     let query;
     let values;
-
     if (user_role === "instructor" || user_role === "admin" || user_role === "super_admin") {
       query = `
         SELECT a.*, 
-               ARRAY_AGG(
-                 json_build_object(
-                   'question_type', qb.question_type,
-                   'question_count', qb.question_count
-                 )
+               COALESCE(
+                 ARRAY_AGG(
+                   json_build_object(
+                     'question_type', qb.question_type,
+                     'question_count', qb.question_count,
+                     'duration_per_question', COALESCE(qb.duration_per_question, 180),
+                     'num_options', qb.num_options,
+                     'num_first_side', qb.num_first_side,
+                     'num_second_side', qb.num_second_side,
+                     'positive_marks', qb.positive_marks,
+                     'negative_marks', qb.negative_marks
+                   )
+                 ) FILTER (WHERE qb.id IS NOT NULL),
+                 '{}'
                ) AS question_blocks,
-               ARRAY_AGG(
-                 json_build_object(
-                   'id', r.id,
-                   'name', r.name,
-                   'file_path', r.file_path,
-                   'file_type', r.file_type
-                 )
+               COALESCE(
+                 ARRAY_AGG(
+                   json_build_object(
+                     'id', r.id,
+                     'name', r.name,
+                     'file_path', r.file_path,
+                     'file_type', r.file_type
+                   )
+                 ) FILTER (WHERE r.id IS NOT NULL),
+                 '{}'
                ) AS resources
         FROM assessments a
         LEFT JOIN question_blocks qb ON a.id = qb.assessment_id
@@ -251,19 +358,31 @@ export const getAssessmentById = async (assessment_id, user_id, user_role) => {
     } else {
       query = `
         SELECT a.*, 
-               ARRAY_AGG(
-                 json_build_object(
-                   'question_type', qb.question_type,
-                   'question_count', qb.question_count
-                 )
+               COALESCE(
+                 ARRAY_AGG(
+                   json_build_object(
+                     'question_type', qb.question_type,
+                     'question_count', qb.question_count,
+                     'duration_per_question', COALESCE(qb.duration_per_question, 180),
+                     'num_options', qb.num_options,
+                     'num_first_side', qb.num_first_side,
+                     'num_second_side', qb.num_second_side,
+                     'positive_marks', qb.positive_marks,
+                     'negative_marks', qb.negative_marks
+                   )
+                 ) FILTER (WHERE qb.id IS NOT NULL),
+                 '{}'
                ) AS question_blocks,
-               ARRAY_AGG(
-                 json_build_object(
-                   'id', r.id,
-                   'name', r.name,
-                   'file_path', r.file_path,
-                   'file_type', r.file_type
-                 )
+               COALESCE(
+                 ARRAY_AGG(
+                   json_build_object(
+                     'id', r.id,
+                     'name', r.name,
+                     'file_path', r.file_path,
+                     'file_type', r.file_type
+                   )
+                 ) FILTER (WHERE r.id IS NOT NULL),
+                 '{}'
                ) AS resources
         FROM assessments a
         LEFT JOIN question_blocks qb ON a.id = qb.assessment_id
@@ -275,7 +394,6 @@ export const getAssessmentById = async (assessment_id, user_id, user_role) => {
       `;
       values = [id, user_id];
     }
-
     const result = await pool.query(query, values);
     if (result.rows.length === 0) {
       return null;
@@ -301,9 +419,8 @@ export const updateAssessment = async (assessmentId, updateData) => {
     RETURNING *
   `;
   const validExternalLinks = Array.isArray(external_links) ? external_links.filter(link => link && typeof link === "string" && link.trim() !== "") : [];
-  console.log(`🔍 Updating assessment ${assessmentId} with external_links:`, validExternalLinks);
   try {
-    const { rows } = await pool.query(query, [title, prompt, JSON.stringify(validExternalLinks), assessmentId]);
+    const { rows } = await pool.query(query, [title, prompt || null, JSON.stringify(validExternalLinks), assessmentId]);
     if (rows.length === 0) throw new Error("Assessment not found");
     console.log(`✅ Assessment updated: ID=${assessmentId}`);
     return rows[0];
@@ -326,19 +443,16 @@ export const deleteAssessment = async (assessmentId) => {
 
 export const storeResourceChunk = async (resourceId, chunkText, embedding, metadata) => {
   try {
-    // Format embedding as PostgreSQL vector string: '[num1,num2,...]'
     if (!Array.isArray(embedding) || embedding.length !== 384) {
       throw new Error("Invalid embedding: must be an array of 384 numbers");
     }
     const embeddingString = '[' + embedding.map(num => num.toString()).join(',') + ']';
-    console.log(`🔍 Formatted embedding string (sample): ${embeddingString.slice(0, 50)}...`);
-
     const query = `
       INSERT INTO resource_chunks (resource_id, chunk_text, embedding, chunk_index)
-      VALUES ($1, $2, $3, $4)
+      VALUES ($1, $2, $3::vector, $4)
       RETURNING *
     `;
-    const values = [resourceId, chunkText, embeddingString, metadata.chunk_index];
+    const values = [resourceId, chunkText, `[${embedding.join(',')}]`, metadata.chunk_index];
     const { rows } = await pool.query(query, values);
     console.log(`✅ Stored chunk for resource ${resourceId}, index ${metadata.chunk_index}`);
     return rows[0];
@@ -348,97 +462,11 @@ export const storeResourceChunk = async (resourceId, chunkText, embedding, metad
   }
 };
 
-export const linkResourceToAssessment = async (assessmentId, resourceId) => {
-  try {
-    const resource = await findResourceById(resourceId);
-    if (!resource) throw new Error("Resource not found");
-    
-    const query = `
-      INSERT INTO assessment_resources (assessment_id, resource_id)
-      VALUES ($1, $2)
-      ON CONFLICT DO NOTHING
-      RETURNING *
-    `;
-    const { rows } = await pool.query(query, [assessmentId, resourceId]);
-    console.log(`✅ Linked resource ${resourceId} to assessment ${assessmentId}`);
-    return rows[0];
-  } catch (error) {
-    console.error("❌ Error linking resource to assessment:", error);
-    throw error;
-  }
-};
-
-export const clearLinksForAssessment = async (assessmentId) => {
-  try {
-    await pool.query("DELETE FROM assessment_resources WHERE assessment_id = $1", [assessmentId]);
-    console.log(`✅ Cleared resource links for assessment ${assessmentId}`);
-  } catch (error) {
-    console.error("❌ Error clearing resource links:", error);
-    throw error;
-  }
-};
-
-export const enrollStudent = async (assessmentId, studentId) => {
-  try {
-    const query = `
-      INSERT INTO enrollments (assessment_id, student_id)
-      VALUES ($1, $2)
-      ON CONFLICT (assessment_id, student_id) DO NOTHING
-      RETURNING *
-    `;
-    const { rows } = await pool.query(query, [assessmentId, studentId]);
-    if (rows.length === 0) {
-      throw new Error("Student already enrolled or invalid data");
-    }
-    console.log(`✅ Enrolled student ${studentId} in assessment ${assessmentId}`);
-    return rows[0];
-  } catch (error) {
-    console.error("❌ Error enrolling student:", error);
-    throw error;
-  }
-};
-
-export const unenrollStudent = async (assessmentId, studentId) => {
-  try {
-    const query = `
-      DELETE FROM enrollments
-      WHERE assessment_id = $1 AND student_id = $2
-      RETURNING *
-    `;
-    const { rows } = await pool.query(query, [assessmentId, studentId]);
-    if (rows.length === 0) {
-      throw new Error("Enrollment not found");
-    }
-    console.log(`✅ Unenrolled student ${studentId} from assessment ${assessmentId}`);
-    return rows[0];
-  } catch (error) {
-    console.error("❌ Error unenrolling student:", error);
-    throw error;
-  }
-};
-
-export const getEnrolledStudents = async (assessmentId) => {
-  try {
-    const query = `
-      SELECT u.id, u.name, u.email, e.enrolled_at
-      FROM enrollments e
-      JOIN users u ON e.student_id = u.id
-      WHERE e.assessment_id = $1
-      ORDER BY e.enrolled_at DESC
-    `;
-    const { rows } = await pool.query(query, [assessmentId]);
-    console.log(`✅ Fetched ${rows.length} enrolled students for assessment ${assessmentId}`);
-    return rows;
-  } catch (error) {
-    console.error("❌ Error fetching enrolled students:", error);
-    throw error;
-  }
-};
-
 export const generateAssessmentQuestions = async (assessmentId, attemptId, language, assessment) => {
-  // Fetch question blocks to determine types and counts
   const { rows: blockRows } = await pool.query(
-    `SELECT question_type, question_count FROM question_blocks WHERE assessment_id = $1`,
+    `SELECT question_type, question_count, COALESCE(duration_per_question, 180) AS duration_per_question, num_options, num_first_side, num_second_side, positive_marks, negative_marks 
+     FROM question_blocks 
+     WHERE assessment_id = $1`,
     [assessmentId]
   );
   if (blockRows.length === 0) {
@@ -449,19 +477,19 @@ export const generateAssessmentQuestions = async (assessmentId, attemptId, langu
   const numQuestions = blockRows.reduce((sum, b) => sum + b.question_count, 0);
   const typeCountsStr = blockRows.map(b => `${b.question_count} ${b.question_type}`).join(", ");
 
-  console.log(`📊 Using instructor-defined questions: ${typeCountsStr} (total ${numQuestions})`);
-
-  // Generate questions via Gemini or fall back to instructor-defined structure
   let questions = [];
-  const model = getCreationModel("gemini-1.5-pro"); // Explicitly use a stable model
+  const model = getCreationModel("gemini-1.5-flash");
   const langName = mapLanguageCode(language);
-  let questionPrompt = `Generate a complete and valid JSON array of unique assessment questions in ${langName} based on the assessment title "${assessment.title}" and prompt "${assessment.prompt}". Follow these rules strictly:
+  let questionPrompt = `Generate a complete and valid JSON array of unique assessment questions in ${langName} based on the assessment title "${assessment.title}" and prompt "${assessment.prompt || 'No additional info provided'}". Follow these rules strictly:
   1. Start with: [
-  2. Each question must have: id, question_type, question_text, options (array of 4 for multiple_choice, array of pairs for matching, null for true_false or short_answer), correct_answer (string for multiple_choice/short_answer, boolean for true_false, array of pairs for matching), marks.
+  2. Each question must have: id, question_type, question_text, options (array of num_options for multiple_choice, array of pairs for matching with num_first_side and num_second_side, null for true_false or short_answer), correct_answer (string for multiple_choice/short_answer, boolean for true_false, array of pairs for matching), marks.
   3. Use only the following question types: ${questionTypes.join(", ")}.
   4. Include exactly these counts: ${typeCountsStr}. Total questions: ${numQuestions}. Ensure no repetition within this set.
-  5. End with: ]
-  6. No extra text, comments, or incomplete objects. Ensure all fields (id, question_type, question_text, options, correct_answer, marks) are present and valid for each question.
+  5. For multiple_choice: ${blockRows.filter(b => b.question_type === "multiple_choice").map(b => `${b.question_count} questions with ${b.num_options || 4} options`).join(", ") || "none"}.
+  6. For matching: ${blockRows.filter(b => b.question_type === "matching").map(b => `${b.question_count} questions with ${b.num_first_side || 4} first-side and ${b.num_second_side || 4} second-side options`).join(", ") || "none"}.
+  7. Marks: Use positive_marks=${blockRows.map(b => b.positive_marks || 1).join(", ")} and negative_marks=${blockRows.map(b => b.negative_marks || 0).join(", ")} where specified.
+  8. End with: ]
+  9. No extra text, comments, or incomplete objects. Ensure all fields are present and valid.
   External links for context: ${(assessment.external_links || []).join(", ")}`;
 
   try {
@@ -490,8 +518,8 @@ export const generateAssessmentQuestions = async (assessmentId, attemptId, langu
           q.question_text === undefined ||
           q.correct_answer === undefined ||
           q.marks === undefined ||
-          (q.question_type === "multiple_choice" && (!q.options || q.options.length !== 4)) ||
-          (q.question_type === "matching" && (!q.options || !Array.isArray(q.options) || q.options.length !== 4 || !q.correct_answer || !Array.isArray(q.correct_answer) || q.correct_answer.length !== 4))
+          (q.question_type === "multiple_choice" && (!q.options || q.options.length !== (blockRows.find(b => b.question_type === "multiple_choice")?.num_options || 4))) ||
+          (q.question_type === "matching" && (!q.options || !Array.isArray(q.options) || q.options.length !== (blockRows.find(b => b.question_type === "matching")?.num_first_side || 4) || !q.correct_answer || !Array.isArray(q.correct_answer) || q.correct_answer.length !== (blockRows.find(b => b.question_type === "matching")?.num_first_side || 4)))
         );
         if (missingFields.length > 0) {
           throw new Error("Missing required fields in some questions");
@@ -513,7 +541,7 @@ export const generateAssessmentQuestions = async (assessmentId, attemptId, langu
           throw new Error("Generated question counts per type do not match instructor settings");
         }
       } catch (e) {
-        console.error(`❌ Invalid JSON from Gemini:`, e.message, "Raw text:", jsonMatch[0]);
+        console.error(`❌ Invalid JSON from Gemini:`, e.message);
         questions = [];
       }
     } else {
@@ -525,18 +553,21 @@ export const generateAssessmentQuestions = async (assessmentId, attemptId, langu
     questions = [];
   }
 
-  // Fallback to instructor-defined question structure if Gemini fails
   if (!Array.isArray(questions) || questions.length === 0) {
     console.log(`🔄 Falling back to instructor-defined question structure for ${numQuestions} questions`);
     questions = blockRows.flatMap(block => {
-      const { question_type, question_count } = block;
+      const { question_type, question_count, num_options, num_first_side, num_second_side, positive_marks, negative_marks } = block;
       return Array.from({ length: question_count }, (_, index) => ({
         id: `${assessmentId}-${question_type}-${index + 1}`,
         question_type,
         question_text: `Instructor-defined ${question_type} question ${index + 1} (to be replaced by student input)`,
-        options: question_type === "multiple_choice" ? ["Option A", "Option B", "Option C", "Option D"] : null,
-        correct_answer: question_type === "multiple_choice" ? "Option A" : question_type === "true_false" ? true : "Sample answer",
-        marks: 1,
+        options: question_type === "multiple_choice" ? Array(num_options || 4).fill().map((_, i) => `Option ${String.fromCharCode(65 + i)}`) : 
+                 question_type === "matching" ? Array(num_first_side || 4).fill().map((_, i) => [`Item ${i + 1}`, `Match ${i + 1}`]) : null,
+        correct_answer: question_type === "multiple_choice" ? `Option A` : 
+                        question_type === "true_false" ? true : 
+                        question_type === "matching" ? Array(num_first_side || 4).fill().map((_, i) => [`Item ${i + 1}`, `Match ${i + 1}`]) : 
+                        "Sample answer",
+        marks: positive_marks || 1,
       }));
     });
   }
@@ -545,11 +576,9 @@ export const generateAssessmentQuestions = async (assessmentId, attemptId, langu
     console.warn(`⚠️ Generated only ${questions.length} questions instead of ${numQuestions}. Proceeding with available questions.`);
   }
 
-  // Store questions in the database
   for (let i = 0; i < questions.length; i++) {
     const q = questions[i];
     const options = Array.isArray(q.options) ? JSON.stringify(q.options) : null;
-    console.log(`📋 Inserting question ${i + 1}:`, { question_text: q.question_text, options, correct_answer: q.correct_answer });
     await pool.query(
       `INSERT INTO generated_questions (attempt_id, question_order, question_type, question_text, options, correct_answer, marks)
        VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)`,
@@ -557,25 +586,108 @@ export const generateAssessmentQuestions = async (assessmentId, attemptId, langu
     );
   }
 
-  // Estimate duration
-  let duration = Math.ceil(questions.length * 3 / 5) * 5;
-  try {
-    const durationPrompt = `Estimate the duration (in minutes) for an assessment with ${questions.length} questions of types ${questionTypes.join(", ")}. Guidelines: 2-3 minutes per multiple_choice, 1-2 minutes per true_false, 3-4 minutes per matching, 2-3 minutes per short_answer, return a single number rounded up to the nearest 5.`;
-    const durationGen = await model.generateContent({
-      contents: [{ role: "user", parts: [{ text: durationPrompt }] }],
-      generationConfig: { maxOutputTokens: 50, temperature: 0.3 },
-    });
-    const durationText = (await durationGen.response).text().trim();
-    const parsedDuration = parseInt(durationText.match(/\d+/)?.[0], 10);
-    if (!isNaN(parsedDuration) && parsedDuration > 0) {
-      duration = Math.ceil(parsedDuration / 5) * 5;
-      console.log(`✅ AI-predicted duration: ${duration} minutes for ${questions.length} questions`);
-    } else {
-      console.warn(`⚠️ Invalid duration from Gemini: ${durationText}, using calculated fallback`);
-    }
-  } catch (e) {
-    console.error("❌ Failed to predict duration from Gemini:", e.message);
-  }
+  const duration = blockRows.reduce((sum, block) => sum + block.question_count * (block.duration_per_question || 180), 0) / 60;
+  console.log(`✅ Calculated duration: ${duration} minutes for ${numQuestions} questions`);
 
   return { questions, duration };
+};
+
+export const enrollStudent = async (assessmentId, studentEmail) => {
+  try {
+    const userQuery = await pool.query("SELECT id FROM users WHERE email = $1", [studentEmail]);
+    if (userQuery.rows.length === 0) {
+      throw new Error("Student not found");
+    }
+    const studentId = userQuery.rows[0].id;
+
+    const query = `
+      INSERT INTO enrollments (assessment_id, student_id, enrolled_at)
+      VALUES ($1, $2, NOW())
+      ON CONFLICT (assessment_id, student_id) DO NOTHING
+      RETURNING *
+    `;
+    const { rows } = await pool.query(query, [assessmentId, studentId]);
+    if (rows.length === 0) {
+      throw new Error("Student already enrolled");
+    }
+    console.log(`✅ Enrolled student ${studentId} to assessment ${assessmentId}`);
+    return rows[0];
+  } catch (error) {
+    console.error("❌ Error enrolling student:", error);
+    throw error;
+  }
+};
+
+export const unenrollStudent = async (assessmentId, studentId) => {
+  try {
+    const query = `
+      DELETE FROM enrollments
+      WHERE assessment_id = $1 AND student_id = $2
+      RETURNING *
+    `;
+    const { rows } = await pool.query(query, [assessmentId, studentId]);
+    if (rows.length === 0) {
+      throw new Error("Student not enrolled in this assessment");
+    }
+    console.log(`✅ Unenrolled student ${studentId} from assessment ${assessmentId}`);
+    return rows[0];
+  } catch (error) {
+    console.error("❌ Error unenrolling student:", error);
+    throw error;
+  }
+};
+
+export const getEnrolledStudents = async (assessmentId) => {
+  try {
+    const query = `
+      SELECT u.id, u.name, u.email
+      FROM enrollments e
+      JOIN users u ON e.student_id = u.id
+      WHERE e.assessment_id = $1
+    `;
+    const { rows } = await pool.query(query, [assessmentId]);
+    console.log(`✅ Fetched ${rows.length} enrolled students for assessment ${assessmentId}`);
+    return rows;
+  } catch (error) {
+    console.error("❌ Error fetching enrolled students:", error);
+    throw error;
+  }
+};
+
+export const clearLinksForAssessment = async (assessmentId) => {
+  try {
+    const query = `
+      UPDATE assessments
+      SET external_links = '[]'
+      WHERE id = $1
+      RETURNING *
+    `;
+    const { rows } = await pool.query(query, [assessmentId]);
+    if (rows.length === 0) {
+      throw new Error("Assessment not found");
+    }
+    console.log(`✅ Cleared external links for assessment ${assessmentId}`);
+    return rows[0];
+  } catch (error) {
+    console.error("❌ Error clearing external links:", error);
+    throw error;
+  }
+};
+
+export const init = async () => {
+  try {
+    if (!pool) {
+      throw new Error("Database pool not initialized");
+    }
+    // Create tables in order to respect foreign key dependencies
+    await ensureAssessmentsTable();
+    await ensureQuestionBlocksTable();
+    await ensureAssessmentResourcesTable();
+    await ensureEnrollmentsTable();
+    await ensureResourceChunksTable();
+    console.log("✅ All assessment-related tables initialized successfully");
+  } catch (error) {
+    console.error("❌ Error initializing assessment tables:", error);
+    throw error;
+  }
 };

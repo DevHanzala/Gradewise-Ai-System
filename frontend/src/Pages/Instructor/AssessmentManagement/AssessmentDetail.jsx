@@ -8,22 +8,22 @@ import Navbar from "../../../components/Navbar";
 import Footer from "../../../components/Footer";
 import toast from "react-hot-toast";
 import axios from "axios";
+import { FaInfoCircle, FaCalendarAlt, FaLink, FaQuestionCircle, FaFileAlt, FaExclamationCircle, FaEdit, FaUsers, FaPrint } from "react-icons/fa";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 function AssessmentDetail() {
-  const { id } = useParams(); // Extract assessmentId from URL
+  const { id } = useParams();
   const navigate = useNavigate();
   const { currentAssessment, getAssessmentById, loading, error } = useAssessmentStore();
   const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" });
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    console.log(`🔍 AssessmentDetail: id from useParams = "${id}"`); // Debug log
+    console.log(`🔍 AssessmentDetail: id from useParams = "${id}"`);
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        // Validate assessmentId
         if (!id || isNaN(parseInt(id))) {
           console.warn(`⚠️ Invalid assessment ID: "${id}"`);
           setModal({
@@ -74,7 +74,7 @@ function AssessmentDetail() {
           </div>
         ) : error ? (
           <div className="text-center py-12">
-            <div className="text-6xl mb-4">❌</div>
+            <FaExclamationCircle className="text-6xl text-red-500 mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">Error Loading Assessment</h3>
             <p className="text-gray-600 mb-4">{error}</p>
             <Link
@@ -86,7 +86,7 @@ function AssessmentDetail() {
           </div>
         ) : !currentAssessment ? (
           <div className="text-center py-12">
-            <div className="text-6xl mb-4">📝</div>
+            <FaFileAlt className="text-6xl text-gray-500 mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">Assessment Not Found</h3>
             <p className="text-gray-600 mb-4">The requested assessment does not exist.</p>
             <Link
@@ -105,16 +105,16 @@ function AssessmentDetail() {
                   {!currentAssessment.is_executed && (
                     <Link
                       to={`/instructor/assessments/${id}/edit`}
-                      className="text-green-600 hover:text-green-900 mr-4"
+                      className="flex items-center text-green-600 hover:text-green-900 transition duration-200"
                     >
-                      Edit
+                      <FaEdit className="mr-1" /> Edit
                     </Link>
                   )}
                   <Link
                     to={`/instructor/assessments/${id}/enroll`}
-                    className="text-blue-600 hover:text-blue-900"
+                    className="flex items-center text-blue-600 hover:text-blue-900 transition duration-200"
                   >
-                    Manage Students
+                    <FaUsers className="mr-1" /> Manage Students
                   </Link>
                   <button
                     onClick={async () => {
@@ -125,7 +125,6 @@ function AssessmentDetail() {
                         });
                         if (!res.data?.success) throw new Error(res.data?.message || "Failed to fetch print data");
 
-                        // Build printable HTML
                         const questions = res.data.data.questions || [];
                         const container = document.createElement("div");
                         container.style.padding = "24px";
@@ -159,7 +158,6 @@ function AssessmentDetail() {
                           container.appendChild(wrap);
                         });
 
-                        // Lazy import to avoid bundling if unused
                         const [{ jsPDF }, html2canvas] = await Promise.all([
                           import("jspdf"),
                           import("html2canvas")
@@ -176,7 +174,6 @@ function AssessmentDetail() {
                         if (imgHeight < pageHeight) {
                           pdf.addImage(imgData, "PNG", 20, y, imgWidth, imgHeight);
                         } else {
-                          // Paginate
                           let sY = 0;
                           const pageCanvas = document.createElement("canvas");
                           const ctx = pageCanvas.getContext("2d");
@@ -199,23 +196,69 @@ function AssessmentDetail() {
                         toast.error(e.message || "Failed to generate PDF");
                       }
                     }}
-                    className="text-purple-600 hover:text-purple-900"
+                    className="flex items-center text-purple-600 hover:text-purple-900 transition duration-200"
                   >
-                    Print (PDF)
+                    <FaPrint className="mr-1" /> Print (PDF)
                   </button>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900">Prompt</h3>
-                  <p className="text-gray-600">{currentAssessment.prompt}</p>
-                </div>
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900">External Links</h3>
+              <div className="space-y-6">
+                <section>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2 flex items-center">
+                    <FaInfoCircle className="mr-2 text-gray-500" /> Basic Information
+                  </h3>
+                  <dl className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
+                    <div className="sm:col-span-1">
+                      <dt className="text-sm font-medium text-gray-500">Title</dt>
+                      <dd className="mt-1 text-sm text-gray-900">{currentAssessment.title}</dd>
+                    </div>
+                    <div className="sm:col-span-1">
+                      <dt className="text-sm font-medium text-gray-500">Prompt</dt>
+                      <dd className="mt-1 text-sm text-gray-900">{currentAssessment.prompt || "N/A"}</dd>
+                    </div>
+                    <div className="sm:col-span-1">
+                      <dt className="text-sm font-medium text-gray-500">Status</dt>
+                      <dd className="mt-1 text-sm text-gray-900">
+                        {currentAssessment.is_executed ? "Executed" : "Draft"}
+                      </dd>
+                    </div>
+                    <div className="sm:col-span-1">
+                      <dt className="text-sm font-medium text-gray-500">Published</dt>
+                      <dd className="mt-1 text-sm text-gray-900">
+                        {currentAssessment.is_published ? "Yes" : "No"}
+                      </dd>
+                    </div>
+                  </dl>
+                </section>
+
+                <section>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2 flex items-center">
+                    <FaCalendarAlt className="mr-2 text-gray-500" /> Dates
+                  </h3>
+                  <dl className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
+                    <div className="sm:col-span-1">
+                      <dt className="text-sm font-medium text-gray-500">Created At</dt>
+                      <dd className="mt-1 text-sm text-gray-900">
+                        {new Date(currentAssessment.created_at).toLocaleString()}
+                      </dd>
+                    </div>
+                    <div className="sm:col-span-1">
+                      <dt className="text-sm font-medium text-gray-500">Updated At</dt>
+                      <dd className="mt-1 text-sm text-gray-900">
+                        {currentAssessment.updated_at ? new Date(currentAssessment.updated_at).toLocaleString() : "N/A"}
+                      </dd>
+                    </div>
+                  </dl>
+                </section>
+
+                <section>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2 flex items-center">
+                    <FaLink className="mr-2 text-gray-500" /> External Links
+                  </h3>
                   {currentAssessment.external_links?.length > 0 ? (
-                    <ul className="list-disc pl-5 text-gray-600">
+                    <ul className="list-disc pl-5 text-sm text-gray-600">
                       {currentAssessment.external_links.map((link, index) => (
                         <li key={index}>
                           <a href={link} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
@@ -225,47 +268,87 @@ function AssessmentDetail() {
                       ))}
                     </ul>
                   ) : (
-                    <p className="text-gray-600">No external links provided.</p>
+                    <p className="text-sm text-gray-600">No external links provided.</p>
                   )}
-                </div>
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900">Question Blocks</h3>
+                </section>
+
+                <section>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2 flex items-center">
+                    <FaQuestionCircle className="mr-2 text-gray-500" /> Question Blocks
+                  </h3>
                   {currentAssessment.question_blocks?.length > 0 ? (
-                    <ul className="list-disc pl-5 text-gray-600">
-                      {currentAssessment.question_blocks.map((block, index) => (
-                        <li key={index}>
-                          {block.question_type} (Count: {block.question_count})
-                        </li>
-                      ))}
-                    </ul>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Count</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration/Question (s)</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Options/First/Second</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Positive Marks</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Negative Marks</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {currentAssessment.question_blocks.map((block, index) => (
+                            <tr key={index}>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{block.question_type}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{block.question_count}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{block.duration_per_question}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {block.question_type === "multiple_choice" && block.num_options ? block.num_options :
+                                 block.question_type === "matching" && block.num_first_side && block.num_second_side ? `${block.num_first_side}/${block.num_second_side}` : "N/A"}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{block.positive_marks ?? "N/A"}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{block.negative_marks ?? "N/A"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   ) : (
-                    <p className="text-gray-600">No question blocks defined.</p>
+                    <p className="text-sm text-gray-600">No question blocks defined.</p>
                   )}
-                </div>
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900">Resources</h3>
+                </section>
+
+                <section>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2 flex items-center">
+                    <FaFileAlt className="mr-2 text-gray-500" /> Resources
+                  </h3>
                   {currentAssessment.resources?.length > 0 ? (
-                    <ul className="list-disc pl-5 text-gray-600">
-                      {currentAssessment.resources.map((resource, index) => (
-                        <li key={index}>{resource.name}</li>
-                      ))}
-                    </ul>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {currentAssessment.resources.map((resource, index) => (
+                            <tr key={index}>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{resource.name}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{resource.file_type}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                <a
+                                  href={resource.file_path}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 hover:underline"
+                                >
+                                  View/Download
+                                </a>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   ) : (
-                    <p className="text-gray-600">No resources attached.</p>
+                    <p className="text-sm text-gray-600">No resources attached.</p>
                   )}
-                </div>
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900">Status</h3>
-                  <p className="text-gray-600">
-                    {currentAssessment.is_executed ? "Executed" : "Draft"}
-                  </p>
-                </div>
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900">Created</h3>
-                  <p className="text-gray-600">
-                    {new Date(currentAssessment.created_at).toLocaleDateString()}
-                  </p>
-                </div>
+                </section>
               </div>
             </CardContent>
           </Card>

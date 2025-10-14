@@ -1,7 +1,7 @@
 import { createAssessment, getAssessmentsByInstructor, getAssessmentById, updateAssessment, deleteAssessment, storeQuestionBlocks, enrollStudent, unenrollStudent, getEnrolledStudents, clearLinksForAssessment, generateAssessmentQuestions } from "../models/assessmentModel.js";
 import { findUserByEmail } from "../models/userModel.js";
 import { linkResourceToAssessment } from "../models/resourceModel.js"; 
-import { uploadResource } from "../controllers/resourceController.js";
+import { uploadResource } from "./resourceController.js";
 import { sendAssessmentEnrollmentEmail } from "../services/emailService.js";
 import pool from "../DB/db.js";
 
@@ -24,10 +24,10 @@ export const createNewAssessment = async (req, res) => {
       });
     }
 
-    if (!prompt) {
+    if (!selected_resources.length && !new_files.length && (!externalLinks || !externalLinks.some(link => link.trim()))) {
       return res.status(400).json({
         success: false,
-        message: "AI prompt is required",
+        message: "At least one resource or external link is required",
       });
     }
 
@@ -38,10 +38,48 @@ export const createNewAssessment = async (req, res) => {
       });
     }
 
+    // Validate question blocks
+    for (const block of question_blocks) {
+      if (!block.question_count || block.question_count < 1) {
+        return res.status(400).json({
+          success: false,
+          message: "Question count must be at least 1 for each block",
+        });
+      }
+      if (!block.duration_per_question || block.duration_per_question < 30) {
+        return res.status(400).json({
+          success: false,
+          message: "Duration per question must be at least 30 seconds",
+        });
+      }
+      if (block.question_type === "multiple_choice") {
+        if (!block.num_options || block.num_options < 2) {
+          return res.status(400).json({
+            success: false,
+            message: "Multiple choice questions must have at least 2 options",
+          });
+        }
+      }
+      if (block.question_type === "matching") {
+        if (!block.num_first_side || block.num_first_side < 2) {
+          return res.status(400).json({
+            success: false,
+            message: "Matching questions must have at least 2 first-side options",
+          });
+        }
+        if (!block.num_second_side || block.num_second_side < 2) {
+          return res.status(400).json({
+            success: false,
+            message: "Matching questions must have at least 2 second-side options",
+          });
+        }
+      }
+    }
+
     const assessmentData = {
       title,
-      prompt,
-      external_links: externalLinks,
+      prompt: prompt || null,
+      externalLinks,
       instructor_id,
       is_executed: false,
     };
@@ -63,8 +101,6 @@ export const createNewAssessment = async (req, res) => {
       await linkResourceToAssessment(newAssessment.id, resourceId);
     }
 
-    console.log("✅ Assessment created successfully:", newAssessment.id);
-
     res.status(201).json({
       success: true,
       message: "Assessment created successfully",
@@ -83,17 +119,15 @@ export const createNewAssessment = async (req, res) => {
 export const getInstructorAssessments = async (req, res) => {
   try {
     const instructor_id = req.user.id;
-    console.log(`📋 Fetching assessments for instructor: ${instructor_id}`);
-
+    console.log(`🔄 Fetching assessments for instructor ${instructor_id}`);
     const assessments = await getAssessmentsByInstructor(instructor_id);
-
     res.status(200).json({
       success: true,
       message: "Assessments retrieved successfully",
-      data: assessments || [],
+      data: assessments,
     });
   } catch (error) {
-    console.error("❌ Get instructor assessments error:", error);
+    console.error("❌ Get assessments error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to retrieve assessments",
@@ -108,12 +142,16 @@ export const getAssessment = async (req, res) => {
     const user_id = req.user.id;
     const user_role = req.user.role;
 
-    console.log(`📋 Fetching assessment ${assessment_id} for user ${user_id} (${user_role})`);
+    if (!assessment_id || isNaN(parseInt(assessment_id))) {
+      return res.status(400).json({ success: false, message: "Invalid assessment ID" });
+    }
 
-    const assessment = await getAssessmentById(assessment_id, user_id, user_role);
+    console.log(`🔄 Fetching assessment ${assessment_id} for user ${user_id} (${user_role})`);
+
+    const assessment = await getAssessmentById(parseInt(assessment_id), user_id, user_role);
 
     if (!assessment) {
-      return res.status(404).json({ success: false, message: "Assessment not found" });
+      return res.status(404).json({ success: false, message: "Assessment not found or access denied" });
     }
 
     res.status(200).json({
@@ -123,138 +161,121 @@ export const getAssessment = async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Get assessment error:", error);
-    res.status(500).json({ success: false, message: "Failed to retrieve assessment", error: error.message });
+    res.status(500).json({
+      success: false,
+      message: "Failed to retrieve assessment",
+      error: error.message,
+    });
   }
 };
 
-export const updateExistingAssessment = async (req, res) => {
+export const updateAssessmentData = async (req, res) => {
   try {
     const assessment_id = req.params.id;
-    const instructor_id = req.user.id;
-    const {
-      title,
-      prompt,
-      externalLinks,
-      question_blocks,
-      selected_resources = [],
-    } = req.body;
+    const user_id = req.user.id;
+    const user_role = req.user.role;
+    const { title, prompt, externalLinks, question_blocks, selected_resources = [] } = req.body;
     const new_files = req.files?.new_files || [];
 
-    const existingAssessment = await getAssessmentById(assessment_id, instructor_id, "instructor");
-
-    if (!existingAssessment) {
-      return res.status(404).json({ message: "Assessment not found or you don't have permission to update it" });
+    if (!assessment_id || isNaN(parseInt(assessment_id))) {
+      return res.status(400).json({ success: false, message: "Invalid assessment ID" });
     }
 
-    if (existingAssessment.is_executed) {
-      return res.status(403).json({ message: "Cannot update executed assessment" });
+    console.log(`🔄 Updating assessment ${assessment_id} for user ${user_id} (${user_role})`);
+
+    const assessment = await getAssessmentById(parseInt(assessment_id), user_id, user_role);
+
+    if (!assessment) {
+      return res.status(404).json({ success: false, message: "Assessment not found or access denied" });
+    }
+
+    if (!title) {
+      return res.status(400).json({ success: false, message: "Title is required" });
+    }
+
+    if (!selected_resources.length && !new_files.length && (!externalLinks || !externalLinks.some(link => link.trim()))) {
+      return res.status(400).json({ success: false, message: "At least one resource or external link is required" });
+    }
+
+    if (!Array.isArray(question_blocks) || question_blocks.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "At least one question block is required",
+      });
     }
 
     const updateData = {
       title,
-      prompt,
+      prompt: prompt || null,
       external_links: externalLinks,
     };
 
-    const updatedAssessment = await updateAssessment(assessment_id, updateData);
+    const updatedAssessment = await updateAssessment(parseInt(assessment_id), updateData);
 
-    await storeQuestionBlocks(assessment_id, question_blocks, instructor_id);
+    await storeQuestionBlocks(parseInt(assessment_id), question_blocks, user_id);
 
-    await clearLinksForAssessment(assessment_id);
     let newResourceIds = [];
     if (new_files.length > 0) {
       const uploadedResources = await uploadResource({ files: new_files });
       newResourceIds = uploadedResources.map(r => r.id);
     }
+
     const allResources = [...selected_resources, ...newResourceIds];
+    await pool.query("DELETE FROM assessment_resources WHERE assessment_id = $1", [parseInt(assessment_id)]);
     for (const resourceId of allResources) {
-      await linkResourceToAssessment(assessment_id, resourceId);
+      await linkResourceToAssessment(parseInt(assessment_id), resourceId);
     }
-
-    res.status(200).json({
-      message: "Assessment updated successfully",
-      assessment: updatedAssessment,
-    });
-  } catch (error) {
-    console.error("❌ Update assessment error:", error);
-    res.status(500).json({ message: "Failed to update assessment", error: error.message });
-  }
-};
-
-export const deleteExistingAssessment = async (req, res) => {
-  try {
-    const assessment_id = req.params.id;
-    const instructor_id = req.user.id;
-
-    const existingAssessment = await getAssessmentById(assessment_id, instructor_id, "instructor");
-
-    if (!existingAssessment) {
-      return res.status(404).json({ message: "Assessment not found or you don't have permission to delete it" });
-    }
-
-    if (existingAssessment.is_executed) {
-      return res.status(403).json({ message: "Cannot delete executed assessment" });
-    }
-
-    await deleteAssessment(assessment_id);
-
-    res.status(200).json({
-      message: "Assessment deleted successfully",
-    });
-  } catch (error) {
-    console.error("❌ Delete assessment error:", error);
-    res.status(500).json({ message: "Failed to delete assessment", error: error.message });
-  }
-};
-
-export const toggleAssessmentPublish = async (req, res) => {
-  try {
-    const assessment_id = Number.parseInt(req.params.id);
-    const instructor_id = req.user.id;
-    const { is_published } = req.body;
-
-    console.log(`📢 Toggling assessment ${assessment_id} publish status to: ${is_published}`);
-
-    const assessment = await getAssessmentById(assessment_id, instructor_id, "instructor");
-
-    if (!assessment) {
-      return res.status(404).json({
-        success: false,
-        message: "Assessment not found or you don't have permission to access it",
-      });
-    }
-
-    if (assessment.is_executed && is_published) {
-      return res.status(400).json({
-        success: false,
-        message: "Cannot publish executed assessment",
-      });
-    }
-
-    const result = await pool.query(
-      "UPDATE assessments SET is_published = $1, updated_at = NOW() WHERE id = $2 RETURNING *",
-      [is_published, assessment_id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(500).json({
-        success: false,
-        message: "Failed to update assessment publish status",
-      });
-    }
-
-    console.log(`✅ Assessment ${assessment_id} publish status updated to: ${is_published}`);
 
     res.status(200).json({
       success: true,
-      message: `Assessment ${is_published ? "published" : "unpublished"} successfully`,
-      data: result.rows[0],
+      message: "Assessment updated successfully",
+      data: updatedAssessment,
     });
   } catch (error) {
-    console.error("❌ Toggle assessment publish error:", error);
+    console.error("❌ Update assessment error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to toggle assessment publish status",
+      message: "Failed to update assessment",
+      error: error.message,
+    });
+  }
+};
+
+export const deleteAssessmentData = async (req, res) => {
+  try {
+    const assessment_id = req.params.id;
+    const user_id = req.user.id;
+    const user_role = req.user.role;
+
+    if (!assessment_id || isNaN(parseInt(assessment_id))) {
+      return res.status(400).json({ success: false, message: "Invalid assessment ID" });
+    }
+
+    console.log(`🔄 Deleting assessment ${assessment_id} for user ${user_id} (${user_role})`);
+
+    const assessment = await getAssessmentById(parseInt(assessment_id), user_id, user_role);
+    if (!assessment) {
+      return res.status(404).json({ success: false, message: "Assessment not found or access denied" });
+    }
+
+    const deleted = await deleteAssessment(parseInt(assessment_id));
+    if (deleted) {
+      console.log(`✅ Assessment deleted: ID=${assessment_id}`);
+      res.status(200).json({
+        success: true,
+        message: "Assessment deleted successfully",
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        message: "Assessment not found",
+      });
+    }
+  } catch (error) {
+    console.error("❌ Delete assessment error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete assessment",
       error: error.message,
     });
   }
@@ -262,68 +283,91 @@ export const toggleAssessmentPublish = async (req, res) => {
 
 export const enrollStudentController = async (req, res) => {
   try {
-    const { assessmentId } = req.params;
+    const assessmentId = req.params.id;
     const { email } = req.body;
     const userId = req.user.id;
     const userRole = req.user.role;
 
-    console.log(`🔄 Enrolling student with email ${email} to assessment ${assessmentId} by user ${userId} (${userRole})`);
+    console.log(`🔍 Validating enrollment for assessment ${assessmentId}, email: ${email}, user: ${userId} (${userRole})`);
 
-    const assessment = await getAssessmentById(assessmentId, userId, userRole);
+    if (!assessmentId || isNaN(parseInt(assessmentId))) {
+      console.warn(`⚠️ Invalid assessment ID: ${assessmentId}`);
+      return res.status(400).json({ success: false, message: "Invalid assessment ID" });
+    }
+
+    if (!email || typeof email !== "string" || !email.trim()) {
+      console.warn(`⚠️ Invalid email: ${email}`);
+      return res.status(400).json({ success: false, message: "Student email is required and must be a valid string" });
+    }
+
+    console.log(`🔄 Checking assessment ${assessmentId} for user ${userId} (${userRole})`);
+    const assessment = await getAssessmentById(parseInt(assessmentId), userId, userRole);
     if (!assessment) {
+      console.warn(`⚠️ Assessment ${assessmentId} not found or access denied for user ${userId}`);
       return res.status(404).json({ success: false, message: "Assessment not found or access denied" });
     }
 
+    console.log(`🔍 Looking up student by email: ${email}`);
     const student = await findUserByEmail(email);
     if (!student) {
+      console.warn(`⚠️ Student not found: ${email}`);
       return res.status(404).json({ success: false, message: "Student not found" });
     }
 
     if (student.role !== "student") {
-      return res.status(400).json({ success: false, message: "User is not a student" });
+      console.warn(`⚠️ User ${email} is not a student, role: ${student.role}`);
+      return res.status(400).json({ success: false, message: `User is not a student (role: ${student.role})` });
     }
 
-    const enrollment = await enrollStudent(assessmentId, student.id);
+    console.log(`🔄 Enrolling student ${student.id} to assessment ${assessmentId}`);
+    const enrollment = await enrollStudent(parseInt(assessmentId), email);
 
-    // Default dueDate to 7 days from now since assessments table lacks due_date
-    const dueDate = assessment.due_date || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    console.log(`🔄 Sending enrollment email to ${email} for assessment ${assessmentId}`);
+    await sendAssessmentEnrollmentEmail(email, assessment.title, assessmentId);
 
-    await sendAssessmentEnrollmentEmail(student.email, student.name, assessment.title, dueDate);
-
+    console.log(`✅ Student enrolled successfully for assessment ${assessmentId}`);
     res.status(200).json({
       success: true,
       message: "Student enrolled successfully",
       data: enrollment,
     });
   } catch (error) {
-    console.error("❌ Enroll student error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to enroll student",
-      error: error.message,
-    });
+    console.error("❌ Error enrolling student:", error.message, error.stack);
+    if (error.message === "Student already enrolled") {
+      return res.status(409).json({ success: false, message: "Student is already enrolled in this assessment" });
+    }
+    res.status(500).json({ success: false, message: error.message || "Failed to enroll student" });
   }
 };
 
 export const unenrollStudentController = async (req, res) => {
   try {
-    const { assessmentId, studentId } = req.params;
+    const assessmentId = req.params.id;
+    const studentId = req.params.studentId;
     const userId = req.user.id;
     const userRole = req.user.role;
 
+    if (!assessmentId || isNaN(parseInt(assessmentId))) {
+      return res.status(400).json({ success: false, message: "Invalid assessment ID" });
+    }
+
+    if (!studentId || isNaN(parseInt(studentId))) {
+      return res.status(400).json({ success: false, message: "Invalid student ID" });
+    }
+
     console.log(`🔄 Unenrolling student ${studentId} from assessment ${assessmentId} by user ${userId} (${userRole})`);
 
-    const assessment = await getAssessmentById(assessmentId, userId, userRole);
+    const assessment = await getAssessmentById(parseInt(assessmentId), userId, userRole);
     if (!assessment) {
       return res.status(404).json({ success: false, message: "Assessment not found or access denied" });
     }
 
-    const enrollment = await unenrollStudent(assessmentId, studentId);
+    const result = await unenrollStudent(parseInt(assessmentId), parseInt(studentId));
 
     res.status(200).json({
       success: true,
       message: "Student unenrolled successfully",
-      data: enrollment,
+      data: result,
     });
   } catch (error) {
     console.error("❌ Unenroll student error:", error);
@@ -337,18 +381,22 @@ export const unenrollStudentController = async (req, res) => {
 
 export const getEnrolledStudentsController = async (req, res) => {
   try {
-    const { assessmentId } = req.params;
+    const assessmentId = req.params.id;
     const userId = req.user.id;
     const userRole = req.user.role;
 
+    if (!assessmentId || isNaN(parseInt(assessmentId))) {
+      return res.status(400).json({ success: false, message: "Invalid assessment ID" });
+    }
+
     console.log(`🔄 Fetching enrolled students for assessment ${assessmentId} by user ${userId} (${userRole})`);
 
-    const assessment = await getAssessmentById(assessmentId, userId, userRole);
+    const assessment = await getAssessmentById(parseInt(assessmentId), userId, userRole);
     if (!assessment) {
       return res.status(404).json({ success: false, message: "Assessment not found or access denied" });
     }
 
-    const students = await getEnrolledStudents(assessmentId);
+    const students = await getEnrolledStudents(parseInt(assessmentId));
 
     res.status(200).json({
       success: true,
@@ -367,38 +415,30 @@ export const getEnrolledStudentsController = async (req, res) => {
 
 export const startAssessmentForStudent = async (req, res) => {
   try {
-    const studentId = req.user.id;
     const { assessmentId } = req.params;
-    const { language = "en" } = req.body || {};
+    const { language } = req.body;
+    const studentId = req.user.id;
 
-    console.log(`📝 Starting assessment ${assessmentId} for student ${studentId} in language ${language}`);
+    if (!assessmentId || isNaN(parseInt(assessmentId))) {
+      return res.status(400).json({ success: false, message: "Invalid assessment ID" });
+    }
 
-    // Check if assessment exists
-    const assessment = await getAssessmentById(assessmentId, studentId, "student");
+    console.log(`🔄 Starting assessment ${assessmentId} for student ${studentId}`);
+
+    const assessment = await getAssessmentById(parseInt(assessmentId), studentId, "student");
     if (!assessment) {
-      console.warn(`⚠️ Assessment ${assessmentId} not found or student ${studentId} not authorized`);
       return res.status(404).json({ success: false, message: "Assessment not found or access denied" });
     }
 
-    // Set is_executed to true if not already
-    if (!assessment.is_executed) {
-      console.log(`🔄 Updating is_executed to true for assessment ${assessmentId}`);
-      await updateAssessment(assessmentId, { is_executed: true });
-    } else {
-      console.log(`ℹ️ Assessment ${assessmentId} already has is_executed = true`);
-    }
-
-    // Validate enrollment
     const { rows: enrollRows } = await pool.query(
-      `SELECT 1 FROM enrollments WHERE student_id = $1 AND assessment_id = $2`,
-      [studentId, assessmentId]
+      `SELECT * FROM enrollments WHERE assessment_id = $1 AND student_id = $2`,
+      [assessmentId, studentId]
     );
     if (enrollRows.length === 0) {
       console.warn(`⚠️ Student ${studentId} not enrolled for assessment ${assessmentId}`);
       return res.status(403).json({ success: false, message: "You are not enrolled for this assessment" });
     }
 
-    // Check for existing in-progress attempt
     const { rows: existingAttempt } = await pool.query(
       `SELECT id FROM assessment_attempts WHERE student_id = $1 AND assessment_id = $2 AND status = 'in_progress'`,
       [studentId, assessmentId]
@@ -408,7 +448,6 @@ export const startAssessmentForStudent = async (req, res) => {
       return res.status(400).json({ success: false, message: "Assessment already in progress" });
     }
 
-    // Create attempt
     const { rows: attemptRows } = await pool.query(
       `INSERT INTO assessment_attempts (student_id, assessment_id, attempt_number, started_at, language, status)
        VALUES ($1, $2, 1, NOW(), $3, 'in_progress') RETURNING id`,
@@ -417,17 +456,15 @@ export const startAssessmentForStudent = async (req, res) => {
     const attemptId = attemptRows[0].id;
     console.log(`✅ Created attempt ${attemptId} for assessment ${assessmentId}`);
 
-    // Generate questions via model
     const { questions, duration } = await generateAssessmentQuestions(assessmentId, attemptId, language, assessment);
 
-    // Verify stored questions
     const { rows: dbQuestions } = await pool.query(
       `SELECT id, question_order, question_type, question_text, options::text, correct_answer, marks
        FROM generated_questions WHERE attempt_id = $1 ORDER BY question_order ASC`,
       [attemptId]
     );
 
-    console.log(`✅ Generated ${dbQuestions.length} questions for attempt ${attemptId}`);
+    console.log(`✅ Generated ${dbQuestions.length} questionsOOO for attempt ${attemptId}`);
 
     res.status(200).json({
       success: true,

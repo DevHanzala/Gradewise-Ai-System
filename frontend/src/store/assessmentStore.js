@@ -84,16 +84,13 @@ const useAssessmentStore = create((set) => ({
       const token = localStorage.getItem("token");
       if (!token) throw new Error("No authentication token found");
       const formData = new FormData();
-      formData.append("title", assessmentData.title);
-      formData.append("prompt", assessmentData.prompt);
-      console.log(`🔍 Sending externalLinks to backend:`, assessmentData.externalLinks);
-      formData.append("externalLinks", JSON.stringify(assessmentData.externalLinks));
-      formData.append("question_blocks", JSON.stringify(assessmentData.question_blocks));
-      const validSelectedResources = assessmentData.selected_resources.filter(id => id && !isNaN(id));
-      formData.append("selected_resources", JSON.stringify(validSelectedResources));
-      assessmentData.new_files?.forEach((file) => {
-        formData.append("new_files", file);
-      });
+      formData.append("title", assessmentData.get("title"));
+      formData.append("prompt", assessmentData.get("prompt"));
+      formData.append("externalLinks", assessmentData.get("externalLinks"));
+      formData.append("question_blocks", assessmentData.get("question_blocks"));
+      formData.append("selected_resources", assessmentData.get("selected_resources"));
+      const files = assessmentData.getAll("new_files");
+      files.forEach((file) => formData.append("new_files", file));
 
       const response = await axios.post(`${API_URL}/assessments`, formData, {
         headers: {
@@ -130,10 +127,9 @@ const useAssessmentStore = create((set) => ({
       const formData = new FormData();
       formData.append("title", assessmentData.title);
       formData.append("prompt", assessmentData.prompt);
-      console.log(`🔍 Sending externalLinks to backend:`, assessmentData.externalLinks);
       formData.append("externalLinks", JSON.stringify(assessmentData.externalLinks));
       formData.append("question_blocks", JSON.stringify(assessmentData.question_blocks));
-      const validSelectedResources = assessmentData.selected_resources.filter(id => id && !isNaN(id));
+      const validSelectedResources = assessmentData.selected_resources?.filter((id) => id && !isNaN(id)) || [];
       formData.append("selected_resources", JSON.stringify(validSelectedResources));
       assessmentData.new_files?.forEach((file) => {
         formData.append("new_files", file);
@@ -201,7 +197,7 @@ const useAssessmentStore = create((set) => ({
       }
       const token = localStorage.getItem("token");
       if (!token) throw new Error("No authentication token found");
-      const response = await axios.get(`${API_URL}/assessments/${parseInt(assessmentId)}/students`, {
+      const response = await axios.get(`${API_URL}/assessments/${parseInt(assessmentId)}/enrolled-students`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.data.success) {

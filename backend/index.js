@@ -2,6 +2,8 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { connectDB } from "./DB/db.js";
+import { init as initAssessmentModel } from "./models/assessmentModel.js";
+import { init as initResourceModel } from "./models/resourceModel.js";
 import authRoutes from "./routes/authRoutes.js";
 import assessmentRoutes from "./routes/assessmentRoutes.js";
 import resourceRoutes from "./routes/resourceRoutes.js";
@@ -30,13 +32,23 @@ const ensureUploadsDir = async () => {
   }
 };
 
-// Connect to database
-connectDB()
-  .then(() => ensureUploadsDir())
-  .catch((error) => {
-    console.error("❌ Database connection failed:", error);
+// Connect to database and initialize tables
+const startServer = async () => {
+  try {
+    await connectDB(); // Connect to database
+    await initResourceModel(); // Initialize resources and resource_chunks
+    await initAssessmentModel(); // Initialize assessments, question_blocks, assessment_resources, enrollments
+    await ensureUploadsDir();
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📊 Environment: ${process.env.NODE_ENV || "development"}`);
+    console.log(`🌐 Frontend URL: ${process.env.FRONTEND_URL || "http://localhost:5173"}`);
+    console.log(`🔧 API Health Check: http://localhost:${PORT}/api/health`);
+    app.listen(PORT);
+  } catch (error) {
+    console.error("❌ Failed to start server:", error);
     process.exit(1);
-  });
+  }
+};
 
 // Middleware
 app.use(
@@ -81,12 +93,7 @@ app.use(notFound);
 app.use(errorHandler);
 
 // Start server
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV || "development"}`);
-  console.log(`🌐 Frontend URL: ${process.env.FRONTEND_URL || "http://localhost:5173"}`);
-  console.log(`🔧 API Health Check: http://localhost:${PORT}/api/health`);
-});
+startServer();
 
 // Handle unhandled errors
 process.on("unhandledRejection", (err) => {

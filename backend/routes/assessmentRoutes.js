@@ -55,55 +55,73 @@ const upload = multer({
 
 const createAssessmentHandler = async (req, res) => {
   try {
-    const { title, prompt, externalLinks = [], question_blocks = [], selected_resources = [] } = req.body;
+    let {
+      title,
+      prompt,
+      externalLinks = '[]',
+      question_blocks = '[]',
+      selected_resources = '[]',
+    } = req.body;
     const instructor_id = req.user.id;
     const files = req.files || [];
 
+    try {
+      externalLinks = JSON.parse(externalLinks);
+      question_blocks = JSON.parse(question_blocks);
+      selected_resources = JSON.parse(selected_resources);
+    } catch (error) {
+      console.error("❌ Parsing error:", error.message, { title, prompt, externalLinks, question_blocks, selected_resources });
+      return res.status(400).json({ success: false, message: "Invalid data format in request" });
+    }
+
     console.log(`🔄 Creating assessment for instructor ${instructor_id}`, { title, prompt, externalLinks, question_blocks, selected_resources, files: files.map(f => f.originalname) });
 
-    if (!title || !prompt) {
-      return res.status(400).json({ success: false, message: "Title and prompt are required" });
+    if (!title || typeof title !== "string" || !title.trim()) {
+      return res.status(400).json({ success: false, message: "Title is required and must be a non-empty string" });
     }
 
-    let parsedExternalLinks;
-    try {
-      parsedExternalLinks = Array.isArray(externalLinks)
-        ? externalLinks.filter(link => link && typeof link === "string" && link.trim() !== "")
-        : typeof externalLinks === "string" && externalLinks.trim() !== ""
-          ? JSON.parse(externalLinks).filter(link => link && typeof link === "string" && link.trim() !== "")
-          : [];
-    } catch (error) {
-      console.warn(`⚠️ Failed to parse externalLinks: ${externalLinks}`, error);
-      parsedExternalLinks = [];
+    if (!externalLinks.length && !files.length && !selected_resources.length) {
+      return res.status(400).json({ success: false, message: "At least one resource, external link, or file is required" });
     }
-    console.log(`🔍 Parsed externalLinks:`, parsedExternalLinks);
 
-    let parsedQuestionBlocks = Array.isArray(question_blocks) ? question_blocks : JSON.parse(question_blocks || "[]");
-    let parsedSelectedResources = Array.isArray(selected_resources) ? selected_resources.filter(id => id && !isNaN(parseInt(id))) : JSON.parse(selected_resources || "[]").filter(id => id && !isNaN(parseInt(id)));
+    if (!Array.isArray(question_blocks) || question_blocks.length === 0) {
+      return res.status(400).json({ success: false, message: "At least one question block is required" });
+    }
 
-    if (parsedQuestionBlocks.length > 0) {
-      for (const block of parsedQuestionBlocks) {
-        if (!block.question_type || block.question_type.trim() === "" || typeof block.question_type !== "string") {
-          return res.status(400).json({ success: false, message: "Each question block must have a valid non-empty question_type" });
+    for (const block of question_blocks) {
+      if (!block.question_count || block.question_count < 1) {
+        return res.status(400).json({ success: false, message: "Question count must be at least 1 for each block" });
+      }
+      if (!block.duration_per_question || block.duration_per_question < 30) {
+        return res.status(400).json({ success: false, message: "Duration per question must be at least 30 seconds" });
+      }
+      if (block.question_type === "multiple_choice" && (!block.num_options || block.num_options < 2)) {
+        return res.status(400).json({ success: false, message: "Multiple choice questions must have at least 2 options" });
+      }
+      if (block.question_type === "matching") {
+        if (!block.num_first_side || block.num_first_side < 2) {
+          return res.status(400).json({ success: false, message: "Matching questions must have at least 2 first-side options" });
         }
-        if (!block.question_count || block.question_count < 1) {
-          return res.status(400).json({ success: false, message: "Each question block must have a valid question_count >= 1" });
+        if (!block.num_second_side || block.num_second_side < 2) {
+          return res.status(400).json({ success: false, message: "Matching questions must have at least 2 second-side options" });
         }
       }
     }
 
     const assessmentData = {
       title,
-      prompt,
-      external_links: parsedExternalLinks,
+      prompt: prompt === "null" ? null : prompt || null,
+      external_links: externalLinks,
       instructor_id,
       is_executed: false,
     };
+
+    console.log("📝 Assessment data sent to model:", assessmentData);
+
     const newAssessment = await createAssessment(assessmentData);
 
-    if (parsedQuestionBlocks.length > 0) {
-      await storeQuestionBlocks(newAssessment.id, parsedQuestionBlocks, instructor_id);
-    }
+    console.log("📝 Question blocks sent to store:", { assessmentId: newAssessment.id, question_blocks, instructor_id });
+    await storeQuestionBlocks(newAssessment.id, question_blocks, instructor_id);
 
     const uploadedResources = [];
     for (const file of files) {
@@ -128,12 +146,13 @@ const createAssessmentHandler = async (req, res) => {
 
       uploadedResources.push(resource.id);
       await linkResourceToAssessment(newAssessment.id, resource.id);
+      console.log(`📝 Linked file resource: ${resource.id} to assessment ${newAssessment.id}`);
     }
 
-    console.log(`🔍 Parsed selected_resources:`, parsedSelectedResources);
-    for (const resourceId of parsedSelectedResources) {
+    for (const resourceId of selected_resources) {
       if (resourceId && !isNaN(parseInt(resourceId))) {
         await linkResourceToAssessment(newAssessment.id, parseInt(resourceId));
+        console.log(`📝 Linked selected resource: ${resourceId} to assessment ${newAssessment.id}`);
       } else {
         console.warn(`⚠️ Skipping invalid resourceId: ${resourceId}`);
       }
@@ -147,283 +166,103 @@ const createAssessmentHandler = async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Create assessment error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to create assessment",
-      error: error.message,
-    });
+    res.status(500).json({ success: false, message: error.message || "Internal server error" });
   }
 };
 
-router.get(
-  "/instructor",
-  protect,
-  authorizeRoles(["instructor", "admin", "super_admin"]),
-  async (req, res) => {
-    try {
-      const instructor_id = req.user.id;
-      console.log(`🔄 Fetching assessments for instructor ${instructor_id}`);
-      const assessments = await getAssessmentsByInstructor(instructor_id);
-      res.status(200).json({
-        success: true,
-        message: "Assessments retrieved successfully",
-        data: assessments || [],
-      });
-    } catch (error) {
-      console.error("❌ Get instructor assessments error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to retrieve assessments",
-        error: error.message,
-      });
+// Use "/" instead of "/assessments" since it's mounted under /api/assessments
+router.post("/", protect, authorizeRoles("instructor", "admin", "super_admin"), upload.array("new_files"), createAssessmentHandler);
+
+router.get("/", protect, authorizeRoles("instructor", "admin", "super_admin"), async (req, res) => {
+  try {
+    const assessments = await getAssessmentsByInstructor(req.user.id);
+    res.status(200).json({ success: true, data: assessments });
+  } catch (error) {
+    console.error("❌ Error fetching assessments:", error);
+    res.status(500).json({ success: false, message: error.message || "Internal server error" });
+  }
+});
+
+// Add this route to match the frontend's call to /api/assessments/instructor
+router.get("/instructor", protect, authorizeRoles("instructor", "admin", "super_admin"), async (req, res) => {
+  try {
+    const assessments = await getAssessmentsByInstructor(req.user.id);
+    res.status(200).json({ success: true, data: assessments });
+  } catch (error) {
+    console.error("❌ Error fetching assessments:", error);
+    res.status(500).json({ success: false, message: error.message || "Internal server error" });
+  }
+});
+
+router.get("/:id", protect, async (req, res) => {
+  try {
+    const assessment = await getAssessmentById(req.params.id, req.user.id, req.user.role);
+    if (!assessment) {
+      return res.status(404).json({ success: false, message: "Assessment not found or access denied" });
     }
+    res.status(200).json({ success: true, data: assessment });
+  } catch (error) {
+    console.error("❌ Error fetching assessment:", error);
+    res.status(500).json({ success: false, message: error.message || "Internal server error" });
   }
-);
+});
 
-router.get(
-  "/:id",
-  protect,
-  authorizeRoles(["instructor", "admin", "super_admin"]),
-  async (req, res) => {
-    try {
-      const assessment_id = req.params.id;
-      const user_id = req.user.id;
-      const user_role = req.user.role;
-
-      if (!assessment_id || isNaN(parseInt(assessment_id))) {
-        return res.status(400).json({ success: false, message: "Invalid assessment ID" });
-      }
-
-      console.log(`🔄 Fetching assessment ${assessment_id} for user ${user_id} (${user_role})`);
-
-      const assessment = await getAssessmentById(parseInt(assessment_id), user_id, user_role);
-
-      if (!assessment) {
-        return res.status(404).json({ success: false, message: "Assessment not found or access denied" });
-      }
-
-      res.status(200).json({
-        success: true,
-        message: "Assessment retrieved successfully",
-        data: assessment,
-      });
-    } catch (error) {
-      console.error("❌ Get assessment by ID error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to retrieve assessment",
-        error: error.message,
-      });
-    }
+router.put("/:id", protect, authorizeRoles("instructor", "admin", "super_admin"), async (req, res) => {
+  try {
+    const assessment = await updateAssessment(req.params.id, req.body);
+    res.status(200).json({ success: true, data: assessment });
+  } catch (error) {
+    console.error("❌ Error updating assessment:", error);
+    res.status(500).json({ success: false, message: error.message || "Internal server error" });
   }
-);
+});
 
-router.post(
-  "/",
-  protect,
-  authorizeRoles(["instructor", "admin", "super_admin"]),
-  upload.array("new_files", 10),
-  createAssessmentHandler
-);
-
-router.post(
-  "/generate-prompt",
-  protect,
-  authorizeRoles(["instructor", "admin", "super_admin"]),
-  upload.array("new_files", 10),
-  async (req, res) => {
-    req.body = { ...req.body, externalLinks: req.body.externalLinks || [], question_blocks: req.body.question_blocks || [], selected_resources: req.body.selected_resources || [] };
-    return createAssessmentHandler(req, res);
+router.delete("/:id", protect, authorizeRoles("instructor", "admin", "super_admin"), async (req, res) => {
+  try {
+    await deleteAssessment(req.params.id);
+    res.status(200).json({ success: true, message: "Assessment deleted successfully" });
+  } catch (error) {
+    console.error("❌ Error deleting assessment:", error);
+    res.status(500).json({ success: false, message: error.message || "Internal server error" });
   }
-);
+});
 
-router.put(
-  "/:id",
-  protect,
-  authorizeRoles(["instructor", "admin", "super_admin"]),
-  upload.array("new_files", 10),
-  async (req, res) => {
-    try {
-      const assessment_id = req.params.id;
-      const user_id = req.user.id;
-      const user_role = req.user.role;
-
-      if (!assessment_id || isNaN(parseInt(assessment_id))) {
-        return res.status(400).json({ success: false, message: "Invalid assessment ID" });
-      }
-
-      console.log(`🔄 Updating assessment ${assessment_id} for user ${user_id} (${user_role})`, { title: req.body.title, prompt: req.body.prompt });
-
-      const assessment = await getAssessmentById(parseInt(assessment_id), user_id, user_role);
-      if (!assessment) {
-        return res.status(404).json({ success: false, message: "Assessment not found or access denied" });
-      }
-
-      if (assessment.is_executed) {
-        return res.status(400).json({ success: false, message: "Cannot update an executed assessment" });
-      }
-
-      const { title, prompt, externalLinks = [], question_blocks = [], selected_resources = [] } = req.body;
-      const files = req.files || [];
-
-      let parsedExternalLinks;
-      try {
-        parsedExternalLinks = Array.isArray(externalLinks)
-          ? externalLinks.filter(link => link && typeof link === "string" && link.trim() !== "")
-          : typeof externalLinks === "string" && externalLinks.trim() !== ""
-            ? JSON.parse(externalLinks).filter(link => link && typeof link === "string" && link.trim() !== "")
-            : [];
-      } catch (error) {
-        console.warn(`⚠️ Failed to parse externalLinks: ${externalLinks}`, error);
-        parsedExternalLinks = [];
-      }
-      console.log(`🔍 Parsed externalLinks:`, parsedExternalLinks);
-
-      let parsedQuestionBlocks = Array.isArray(question_blocks) ? question_blocks : JSON.parse(question_blocks || "[]");
-      let parsedSelectedResources = Array.isArray(selected_resources)
-        ? selected_resources.filter(id => id && !isNaN(parseInt(id)) && id !== "null")
-        : JSON.parse(selected_resources || "[]").filter(id => id && !isNaN(parseInt(id)) && id !== "null");
-
-      if (parsedQuestionBlocks.length > 0) {
-        for (const block of parsedQuestionBlocks) {
-          if (!block.question_type || block.question_type.trim() === "" || typeof block.question_type !== "string") {
-            return res.status(400).json({ success: false, message: "Each question block must have a valid non-empty question_type" });
-          }
-          if (!block.question_count || block.question_count < 1) {
-            return res.status(400).json({ success: false, message: "Each question block must have a valid question_count >= 1" });
-          }
-        }
-      }
-
-      const updateData = {
-        title,
-        prompt,
-        external_links: parsedExternalLinks,
-      };
-      const updatedAssessment = await updateAssessment(parseInt(assessment_id), updateData);
-
-      await clearLinksForAssessment(parseInt(assessment_id));
-      if (parsedQuestionBlocks.length > 0) {
-        await storeQuestionBlocks(parseInt(assessment_id), parsedQuestionBlocks, user_id);
-      } else {
-        await storeQuestionBlocks(parseInt(assessment_id), [], user_id);
-      }
-
-      const uploadedResources = [];
-      for (const file of files) {
-        const resourceData = {
-          name: file.originalname,
-          file_path: file.path,
-          file_type: file.mimetype,
-          file_size: file.size,
-          content_type: "file",
-          visibility: "private",
-          uploaded_by: user_id,
-        };
-        const resource = await createResource(resourceData);
-
-        const text = await extractTextFromFile(file.path, file.mimetype);
-        const chunks = chunkText(text, 500);
-        for (let i = 0; i < chunks.length; i++) {
-          const chunk = chunks[i];
-          const embedding = await generateEmbedding(chunk);
-          await storeResourceChunk(resource.id, chunk, embedding, { chunk_index: i });
-        }
-
-        uploadedResources.push(resource.id);
-        await linkResourceToAssessment(parseInt(assessment_id), resource.id);
-      }
-
-      console.log(`🔍 Parsed selected_resources:`, parsedSelectedResources);
-      for (const resourceId of parsedSelectedResources) {
-        if (resourceId && !isNaN(parseInt(resourceId)) && resourceId !== "null") {
-          await linkResourceToAssessment(parseInt(assessment_id), parseInt(resourceId));
-        } else {
-          console.warn(`⚠️ Skipping invalid resourceId: ${resourceId}`);
-        }
-      }
-
-      console.log(`✅ Assessment updated: ID=${assessment_id}`);
-      res.status(200).json({
-        success: true,
-        message: "Assessment updated successfully",
-        data: updatedAssessment,
-      });
-    } catch (error) {
-      console.error("❌ Update assessment error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to update assessment",
-        error: error.message,
-      });
-    }
+router.post("/:id/enroll", protect, authorizeRoles("instructor", "admin", "super_admin"), async (req, res) => {
+  try {
+    console.log(`🔍 Enroll request payload for assessment ${req.params.id}:`, req.body);
+    await enrollStudentController(req, res);
+  } catch (error) {
+    console.error("❌ Error enrolling student:", error, error.stack);
+    res.status(500).json({ success: false, message: error.message || "Internal server error" });
   }
-);
+});
 
-router.delete(
-  "/:id",
-  protect,
-  authorizeRoles(["instructor", "admin", "super_admin"]),
-  async (req, res) => {
-    try {
-      const assessment_id = req.params.id;
-      const user_id = req.user.id;
-      const user_role = req.user.role;
-
-      if (!assessment_id || isNaN(parseInt(assessment_id))) {
-        return res.status(400).json({ success: false, message: "Invalid assessment ID" });
-      }
-
-      console.log(`🔄 Deleting assessment ${assessment_id} for user ${user_id} (${user_role})`);
-
-      const assessment = await getAssessmentById(parseInt(assessment_id), user_id, user_role);
-      if (!assessment) {
-        return res.status(404).json({ success: false, message: "Assessment not found or access denied" });
-      }
-
-      const deleted = await deleteAssessment(parseInt(assessment_id));
-      if (deleted) {
-        console.log(`✅ Assessment deleted: ID=${assessment_id}`);
-        res.status(200).json({
-          success: true,
-          message: "Assessment deleted successfully",
-        });
-      } else {
-        res.status(404).json({
-          success: false,
-          message: "Assessment not found",
-        });
-      }
-    } catch (error) {
-      console.error("❌ Delete assessment error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to delete assessment",
-        error: error.message,
-      });
-    }
+router.delete("/:id/enroll/:studentId", protect, authorizeRoles("instructor", "admin", "super_admin"), async (req, res) => {
+  try {
+    await unenrollStudentController(req, res);
+  } catch (error) {
+    console.error("❌ Error unenrolling student:", error, error.stack);
+    res.status(500).json({ success: false, message: error.message || "Internal server error" });
   }
-);
+});
 
-router.post(
-  "/:assessmentId/enroll",
-  protect,
-  authorizeRoles(["instructor", "admin", "super_admin"]),
-  enrollStudentController
-);
+router.get("/:id/enrolled-students", protect, authorizeRoles("instructor", "admin", "super_admin"), async (req, res) => {
+  try {
+    await getEnrolledStudentsController(req, res);
+  } catch (error) {
+    console.error("❌ Error fetching enrolled students:", error, error.stack);
+    res.status(500).json({ success: false, message: error.message || "Internal server error" });
+  }
+});
 
-router.delete(
-  "/:assessmentId/unenroll/:studentId",
-  protect,
-  authorizeRoles(["instructor", "admin", "super_admin"]),
-  unenrollStudentController
-);
-
-router.get(
-  "/:assessmentId/students",
-  protect,
-  authorizeRoles(["instructor", "admin", "super_admin"]),
-  getEnrolledStudentsController
-);
+router.put("/:id/clear-links", protect, authorizeRoles("instructor", "admin", "super_admin"), async (req, res) => {
+  try {
+    const assessment = await clearLinksForAssessment(req.params.id);
+    res.status(200).json({ success: true, data: assessment });
+  } catch (error) {
+    console.error("❌ Error clearing external links:", error);
+    res.status(500).json({ success: false, message: error.message || "Internal server error" });
+  }
+});
 
 export default router;
