@@ -1,3 +1,4 @@
+// frontend/src/Pages/Student/StudentDashboard.jsx
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import useAuthStore from "../../store/authStore";
@@ -57,6 +58,13 @@ function StudentDashboard() {
       hour: "2-digit",
       minute: "2-digit",
     });
+  };
+
+  const calculateScorePercentage = (attempt) => {
+    const obtainedMarks = attempt.obtained_marks || 0; // From assessment_attempts table
+    const questions = attempt.questions || [];
+    const totalMarks = Array.isArray(questions) ? questions.reduce((sum, q) => sum + (q.marks || 0), 0) : 0 || 1; // Fallback to 1 to avoid division by zero
+    return totalMarks > 0 ? Math.round((obtainedMarks / totalMarks) * 100) : 0;
   };
 
   if (loading) {
@@ -206,7 +214,7 @@ function StudentDashboard() {
                         >
                           <div className="flex-1">
                             <h3 className="font-medium text-gray-900">{assessment.title || "Untitled"}</h3>
-                            <p className="text-sm text-gray-600">{assessment.prompt || "No description"}</p>
+                            {assessment.prompt && <p className="text-sm text-gray-600">{assessment.prompt}</p>}
                             <div className="flex items-center space-x-4 mt-2 text-xs text-gray-500">
                               <span>📝 AI-Generated Questions</span>
                               <span>🤖 Auto-Graded</span>
@@ -272,7 +280,7 @@ function StudentDashboard() {
                             <p className="text-sm font-medium text-gray-900">{attempt.title || "Untitled"}</p>
                             <p className="text-xs text-gray-500">Completed on {formatDate(attempt.date)}</p>
                           </div>
-                          <div className="text-sm font-medium text-green-600">{attempt.score || "Pending"}%</div>
+                          <div className="text-sm font-medium text-green-600">{calculateScorePercentage(attempt)}%</div>
                         </div>
                       ))}
                   </div>

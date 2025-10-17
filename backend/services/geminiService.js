@@ -58,7 +58,7 @@ export const mapLanguageCode = (lang) => {
 export const generateContent = async (client, prompt, options = {}) => {
   try {
     const response = await client.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-2.5-flash", // Explicitly set to your working model
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: {
         generationConfig: {
@@ -89,9 +89,9 @@ export const generateContent = async (client, prompt, options = {}) => {
       return generateContent(client, prompt, options); // Retry
     }
     if (error.message.includes("NOT_FOUND") || error.message.includes("INVALID_ARGUMENT")) {
-      console.log("🔄 Switching to fallback model: gemini-1.5-pro");
+      console.log("🔄 Switching to fallback model: gemini-2.5-pro"); // Updated fallback
       const fallbackClient = new GoogleGenAI({ apiKey: process.env.GEMINI_CREATION_API_KEY });
-      return generateContent(fallbackClient, prompt, { model: "gemini-1.5-pro", ...options });
+      return generateContent(fallbackClient, prompt, { model: "gemini-2.5-pro", ...options });
     }
     throw error;
   }

@@ -1,20 +1,13 @@
+// controllers/studentAnalyticsController.js
 import {
   getStudentAnalytics,
   getPerformanceOverTime,
   getLearningRecommendations,
   getStudentAssessmentsList,
-  getAssessmentAnalytics
+  getAssessmentAnalytics,
+  getAssessmentQuestions as modelGetAssessmentQuestions
 } from "../models/studentAnalyticsModel.js";
 
-/**
- * Student Analytics Controller
- * Handles API endpoints for student progress tracking and performance analysis
- */
-
-/**
- * Get student's overall analytics
- * @route GET /api/student-analytics/overview
- */
 export const getStudentOverview = async (req, res) => {
   try {
     const studentId = req.user.id;
@@ -45,10 +38,6 @@ export const getStudentOverview = async (req, res) => {
   }
 };
 
-/**
- * Get student's performance over time
- * @route GET /api/student-analytics/performance
- */
 export const getStudentPerformance = async (req, res) => {
   try {
     const studentId = req.user.id;
@@ -83,10 +72,6 @@ export const getStudentPerformance = async (req, res) => {
   }
 };
 
-/**
- * Get student's learning recommendations
- * @route GET /api/student-analytics/recommendations
- */
 export const getStudentRecommendations = async (req, res) => {
   try {
     const studentId = req.user.id;
@@ -117,10 +102,6 @@ export const getStudentRecommendations = async (req, res) => {
   }
 };
 
-/**
- * Get student's completed assessments list
- * @route GET /api/student-analytics/assessments
- */
 export const getStudentAssessments = async (req, res) => {
   try {
     const studentId = req.user.id;
@@ -149,10 +130,6 @@ export const getStudentAssessments = async (req, res) => {
   }
 };
 
-/**
- * Get details for a specific assessment
- * @route GET /api/student-analytics/assessment/:id
- */
 export const getAssessmentDetails = async (req, res) => {
   try {
     const studentId = req.user.id;
@@ -182,10 +159,35 @@ export const getAssessmentDetails = async (req, res) => {
   }
 };
 
-/**
- * Get student's detailed analytics report
- * @route GET /api/student-analytics/report
- */
+export const getAssessmentQuestions = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const assessmentId = parseInt(req.params.id);
+
+    if (req.user.role !== "student") {
+      return res.status(403).json({
+        success: false,
+        message: "Only students can access their assessment details"
+      });
+    }
+
+    const questions = await modelGetAssessmentQuestions(studentId, assessmentId);
+
+    res.status(200).json({
+      success: true,
+      message: "Assessment questions and answers retrieved successfully",
+      data: questions
+    });
+  } catch (error) {
+    console.error("❌ Get assessment questions error:", error.stack || error.message);
+    res.status(500).json({
+      success: false,
+      message: "Failed to retrieve assessment questions",
+      error: error.message
+    });
+  }
+};
+
 export const getStudentReport = async (req, res) => {
   try {
     const studentId = req.user.id;
@@ -296,6 +298,6 @@ const convertToCSV = (report, isSpecificAssessment = false) => {
 
   return [
     headers.join(','),
-    ...rows.map(row => row.map(field => `"${field}"`).join(',')) // Quote fields to handle commas
+    ...rows.map(row => row.map(field => `"${field}"`).join(','))
   ].join('\n');
 };

@@ -31,6 +31,18 @@ function TakeAssessment() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const autoSubmitRef = useRef(false);
 
+  // RTL support for selected language
+  useEffect(() => {
+    const rtlLanguages = ["ur", "ar", "fa"];
+    const isRTL = rtlLanguages.includes(selectedLanguage);
+    document.body.dir = isRTL ? "rtl" : "ltr";
+    document.body.style.textAlign = isRTL ? "right" : "left";
+    return () => {
+      document.body.dir = "ltr";
+      document.body.style.textAlign = "left";
+    };
+  }, [selectedLanguage]);
+
   // Start assessment
   const handleStart = useCallback(async () => {
     try {
@@ -91,270 +103,243 @@ function TakeAssessment() {
   }, [timeRemaining, isSubmitted, hasStarted, decrementTime, handleSubmit]);
 
   // Per-question timer
-  const perQuestionSeconds = Math.max(
-    20,
-    Math.floor((timeRemaining || 0) / Math.max(assessmentQuestions.length, 1))
-  );
+  const currentQuestion = assessmentQuestions[currentQuestionIndex];
+  const perQuestionSeconds = currentQuestion?.duration_per_question || 20;
   const [questionTimeLeft, setQuestionTimeLeft] = useState(perQuestionSeconds);
 
   useEffect(() => {
-    if (!hasStarted || isSubmitted || assessmentQuestions.length === 0) return;
     setQuestionTimeLeft(perQuestionSeconds);
-  }, [currentQuestionIndex, assessmentQuestions.length, hasStarted, isSubmitted, perQuestionSeconds]);
+  }, [currentQuestionIndex, perQuestionSeconds]);
 
   useEffect(() => {
-    if (!hasStarted || isSubmitted || isSubmitting || assessmentQuestions.length === 0) return;
-    const timer = setInterval(() => {
-      setQuestionTimeLeft((prev) => {
-        if (prev <= 1) {
-          if (currentQuestionIndex < assessmentQuestions.length - 1) {
-            setCurrentQuestionIndex((idx) => idx + 1);
-            return perQuestionSeconds;
-          } else if (!autoSubmitRef.current) {
-            handleSubmit();
-            return 0;
-          }
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [hasStarted, isSubmitted, isSubmitting, currentQuestionIndex, assessmentQuestions.length, perQuestionSeconds, handleSubmit]);
+    if (questionTimeLeft > 0 && hasStarted && !isSubmitted) {
+      const timer = setInterval(() => setQuestionTimeLeft((prev) => prev - 1), 1000);
+      return () => clearInterval(timer);
+    } else if (questionTimeLeft <= 0 && currentQuestionIndex < assessmentQuestions.length - 1) {
+      setCurrentQuestionIndex((prev) => prev + 1);
+      setQuestionTimeLeft(perQuestionSeconds);
+    }
+  }, [questionTimeLeft, hasStarted, isSubmitted, currentQuestionIndex, assessmentQuestions.length, perQuestionSeconds]);
 
-  // Handle answer updates
+  // Navigation
+  const handlePrevious = () => {
+    if (currentQuestionIndex > 0) {
+      setCurrentQuestionIndex(currentQuestionIndex - 1);
+      setQuestionTimeLeft(assessmentQuestions[currentQuestionIndex - 1]?.duration_per_question || 20);
+    }
+  };
+
+  const handleNext = () => {
+    if (currentQuestionIndex < assessmentQuestions.length - 1) {
+      setCurrentQuestionIndex(currentQuestionIndex + 1);
+      setQuestionTimeLeft(assessmentQuestions[currentQuestionIndex + 1]?.duration_per_question || 20);
+    }
+  };
+
+  // Update answer
   const handleAnswerUpdate = (questionId, answer) => {
     updateAnswer(questionId, answer);
   };
 
-  // Navigation
-  const handleNext = () => {
-    if (currentQuestionIndex < assessmentQuestions.length - 1) {
-      setCurrentQuestionIndex(currentQuestionIndex + 1);
+  // Error handling
+  useEffect(() => {
+    if (error) {
+      setModal({
+        isOpen: true,
+        type: "error",
+        title: "Error",
+        message: error,
+      });
+      clearError();
     }
-  };
+  }, [error, clearError]);
 
-  const handlePrevious = () => {
-    if (currentQuestionIndex > 0) {
-      setCurrentQuestionIndex(currentQuestionIndex - 1);
-    }
-  };
-
-  // Loading state
-  if (loading && !hasStarted) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-        <Navbar />
-        <div className="flex items-center justify-center h-96">
-          <LoadingSpinner />
-        </div>
-        <Footer />
-      </div>
-    );
-  }
-
-  // Error state
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-        <Navbar />
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-4">Error</h1>
-          <p className="text-red-600">{error}</p>
-          <button
-            onClick={() => {
-              clearError();
-              navigate("/student/dashboard");
-            }}
-            className="mt-4 px-6 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
-          >
-            Back to Dashboard
-          </button>
-        </div>
-        <Footer />
-      </div>
-    );
-  }
-
-  // Submitted state
-  if (isSubmitted) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-        <Navbar />
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-4">Assessment Completed</h1>
-          <div className="flex">
-            <button
-              onClick={() => {
-                clearError();
-                navigate("/student/dashboard");
-              }}
-              className="px-6 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
-            >
-              Back to Dashboard
-            </button>
-          </div>
-        </div>
-        <Footer />
-        <Modal
-          isOpen={modal.isOpen}
-          onClose={() => {
-            setModal({ ...modal, isOpen: false });
-            clearError();
-            navigate("/student/dashboard");
-          }}
-          type={modal.type}
-          title={modal.title}
-        >
-          {modal.message}
-        </Modal>
-      </div>
-    );
-  }
-
-  // Pre-start language selection UI
-  if (!hasStarted) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-        <Navbar />
-        <div className="max-w-2xl mx-auto py-10 px-4">
-          <Card className="shadow-lg bg-white rounded-xl">
-            <CardHeader className="bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-t-xl">
-              <h2 className="text-xl font-semibold flex items-center">
-                <FaQuestion className="mr-2" /> Start Assessment
-              </h2>
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <Navbar />
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {!hasStarted && (
+          <Card>
+            <CardHeader>
+              <h2 className="text-xl font-semibold text-gray-900">Start Assessment</h2>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <label className="block text-sm font-medium text-gray-700">Select language for AI content</label>
-                <select
-                  className="w-full border rounded px-3 py-2 text-gray-900"
-                  value={selectedLanguage}
-                  onChange={(e) => setSelectedLanguage(e.target.value)}
-                >
-                  <option value="en">English</option>
-                  <option value="ur">Urdu</option>
-                  <option value="ar">Arabic</option>
-                  <option value="fa">Persian</option>
-                </select>
+                <div>
+                  <label htmlFor="language" className="block text-sm font-medium text-gray-700 mb-2">
+                    Select Language
+                  </label>
+                  <select
+                    id="language"
+                    value={selectedLanguage}
+                    onChange={(e) => setSelectedLanguage(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="en">English</option>
+                    <option value="ur">Urdu</option>
+                    <option value="ar">Arabic</option>
+                    <option value="fa">Persian</option>
+                  </select>
+                </div>
                 <button
                   onClick={handleStart}
-                  className="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center justify-center"
                   disabled={loading}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center"
                 >
-                  <FaCheck className="mr-2" /> Start
+                  {loading ? (
+                    <div className="flex items-center">
+                      <LoadingSpinner size="sm" color="white" />
+                      <span className="ml-2">Starting...</span>
+                    </div>
+                  ) : (
+                    "Start Assessment"
+                  )}
                 </button>
               </div>
             </CardContent>
           </Card>
-        </div>
-        <Footer />
-      </div>
-    );
-  }
+        )}
 
-  // Main assessment interface
-  const currentQuestion = assessmentQuestions[currentQuestionIndex];
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      <Navbar />
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Take Assessment</h1>
-          <div className="text-lg font-semibold text-gray-700 flex items-center">
-            <FaClock className="mr-2" /> Time Remaining: {Math.floor(timeRemaining / 60)}:{(timeRemaining % 60).toString().padStart(2, "0")} • Question: {questionTimeLeft}s
+        {loading && (
+          <div className="flex justify-center items-center h-64">
+            <LoadingSpinner size="lg" />
+            <span className="ml-3 text-gray-600">Loading assessment...</span>
           </div>
-        </div>
-        <Card className="shadow-lg bg-white rounded-xl">
-          <CardHeader className="bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-t-xl">
-            <h2 className="text-xl font-semibold flex items-center">
-              <FaQuestion className="mr-2" /> Question {currentQuestionIndex + 1} of {assessmentQuestions.length}
-            </h2>
-          </CardHeader>
-          <CardContent>
-            {currentQuestion && (
-              <div className="space-y-6">
-                <p className="text-lg text-gray-800">{currentQuestion.question_text}</p>
+        )}
+
+        {error && (
+          <div className="text-center py-12">
+            <div className="text-6xl mb-4">❌</div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Error Loading Assessment</h3>
+            <p className="text-gray-600 mb-4">{error}</p>
+            <button
+              onClick={() => navigate("/student/dashboard")}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition duration-200"
+            >
+              Back to Dashboard
+            </button>
+          </div>
+        )}
+
+        {hasStarted && !isSubmitted && assessmentQuestions.length > 0 && currentQuestion && (
+          <Card>
+            <CardHeader>
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-semibold text-gray-900">Assessment</h2>
+                <div className="flex items-center space-x-4">
+                  <div className="flex items-center">
+                    <FaClock className="mr-2 text-gray-500" />
+                    <span className="text-gray-600">
+                      Time Remaining: {Math.floor(timeRemaining / 60)}:{(timeRemaining % 60).toString().padStart(2, "0")}
+                    </span>
+                  </div>
+                  <div className="flex items-center">
+                    <FaQuestion className="mr-2 text-gray-500" />
+                    <span className="text-gray-600">
+                      Question {currentQuestionIndex + 1} of {assessmentQuestions.length}
+                    </span>
+                  </div>
+                  <div className="flex items-center">
+                    <FaCheck className="mr-2 text-gray-500" />
+                    <span className="text-gray-600">
+                      Answered: {assessmentQuestions.filter(q => q.answer !== undefined).length}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div>
+                <h3 className="text-lg font-medium text-gray-900 mb-4">
+                  Q{currentQuestionIndex + 1}. {currentQuestion.question_text} ({currentQuestion.question_type})
+                </h3>
+                <p className="text-sm text-gray-500 mb-4">
+                  Marks: +{currentQuestion.positive_marks || 1} / -{currentQuestion.negative_marks || 0} | Time: {questionTimeLeft} seconds
+                </p>
                 {currentQuestion.question_type === "multiple_choice" && (
                   <div className="space-y-2">
                     {currentQuestion.options?.map((option, index) => (
-                      <label key={index} className="flex items-center">
+                      <div key={index} className="flex items-center">
                         <input
                           type="radio"
-                          name={`question-${currentQuestion.id}`}
+                          id={`option-${index}`}
+                          name="mcq-answer"
                           value={option}
                           checked={currentQuestion.answer === option}
                           onChange={(e) => handleAnswerUpdate(currentQuestion.id, e.target.value)}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                          className="h-4 w-4 text-blue-600 border-gray-300 rounded"
                         />
-                        <span className="ml-3 text-gray-700">{option}</span>
-                      </label>
-                    ))}
+                        <label htmlFor={`option-${index}`} className="ml-2 text-gray-700">
+                          {option}
+                        </label>
+                      </div>
+                    )) || <p>No options available</p>}
                   </div>
                 )}
                 {currentQuestion.question_type === "true_false" && (
                   <div className="space-y-2">
-                    <label className="flex items-center">
+                    <div className="flex items-center">
                       <input
                         type="radio"
-                        name={`question-${currentQuestion.id}`}
-                        value="true"
-                        checked={currentQuestion.answer === "true"}
-                        onChange={(e) => handleAnswerUpdate(currentQuestion.id, e.target.value)}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                        id="true"
+                        name="tf-answer"
+                        value={true}
+                        checked={currentQuestion.answer === true}
+                        onChange={(e) => handleAnswerUpdate(currentQuestion.id, true)}
+                        className="h-4 w-4 text-blue-600 border-gray-300 rounded"
                       />
-                      <span className="ml-3 text-gray-700">True</span>
-                    </label>
-                    <label className="flex items-center">
+                      <label htmlFor="true" className="ml-2 text-gray-700">
+                        True
+                      </label>
+                    </div>
+                    <div className="flex items-center">
                       <input
                         type="radio"
-                        name={`question-${currentQuestion.id}`}
-                        value="false"
-                        checked={currentQuestion.answer === "false"}
-                        onChange={(e) => handleAnswerUpdate(currentQuestion.id, e.target.value)}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                        id="false"
+                        name="tf-answer"
+                        value={false}
+                        checked={currentQuestion.answer === false}
+                        onChange={(e) => handleAnswerUpdate(currentQuestion.id, false)}
+                        className="h-4 w-4 text-blue-600 border-gray-300 rounded"
                       />
-                      <span className="ml-3 text-gray-700">False</span>
-                    </label>
+                      <label htmlFor="false" className="ml-2 text-gray-700">
+                        False
+                      </label>
+                    </div>
                   </div>
                 )}
-                {currentQuestion.question_type === "matching" && currentQuestion.options && Array.isArray(currentQuestion.options) && (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-4">
-                      {currentQuestion.options.map((option, index) => (
-                        <div key={index} className="flex items-center">
-                          <span className="font-medium text-gray-700 w-1/2">{Object.values(option)[0]}</span>
+                {currentQuestion.question_type === "matching" && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      {currentQuestion.options?.map((opt, index) => (
+                        <div key={index} className="flex items-center space-x-2">
+                          <span className="font-medium">{opt[0]}</span>
+                          <select
+                            value={currentQuestion.answer?.[index]?.[1] || ""}
+                            onChange={(e) => {
+                              const newAnswer = [...(currentQuestion.answer || currentQuestion.options)];
+                              newAnswer[index][1] = e.target.value;
+                              handleAnswerUpdate(currentQuestion.id, newAnswer);
+                            }}
+                            className="w-full border rounded px-3 py-2 text-gray-900 focus:ring-blue-500 focus:border-blue-500"
+                          >
+                            <option value="">Select match</option>
+                            {currentQuestion.options.map((mopt) => (
+                              <option key={JSON.stringify(mopt)} value={mopt[1]}>{mopt[1]}</option>
+                            ))}
+                          </select>
                         </div>
-                      ))}
-                    </div>
-                    <div className="space-y-4">
-                      {currentQuestion.options.map((option, index) => (
-                        <select
-                          key={index}
-                          value={currentQuestion.answer?.[index]?.[1] || ""}
-                          onChange={(e) => {
-                            const newAnswer = [...(currentQuestion.answer || currentQuestion.options)];
-                            newAnswer[index][1] = e.target.value;
-                            handleAnswerUpdate(currentQuestion.id, newAnswer);
-                          }}
-                          className="w-full border rounded px-3 py-2 text-gray-900 focus:ring-blue-500 focus:border-blue-500"
-                        >
-                          <option value="">Select match</option>
-                          {currentQuestion.options.map((opt) => (
-                            <option key={JSON.stringify(opt)} value={Object.values(opt)[1]}>{Object.values(opt)[1]}</option>
-                          ))}
-                        </select>
-                      ))}
+                      )) || <p>No options available</p>}
                     </div>
                   </div>
                 )}
                 {currentQuestion.question_type === "short_answer" && (
                   <div>
-                    <input
-                      type="text"
+                    <textarea
                       value={currentQuestion.answer || ""}
                       onChange={(e) => handleAnswerUpdate(currentQuestion.id, e.target.value)}
                       className="w-full border rounded px-3 py-2 text-gray-900 focus:ring-blue-500 focus:border-blue-500"
+                      rows={4}
                       placeholder="Type your answer here"
                     />
                   </div>
@@ -392,9 +377,9 @@ function TakeAssessment() {
                   )}
                 </button>
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
       <Footer />
       <Modal

@@ -1,3 +1,4 @@
+// store/useStudentAnalyticsStore.js
 import { create } from "zustand";
 import axios from "axios";
 import toast from "react-hot-toast";
@@ -248,9 +249,9 @@ const formatTime = (seconds) => {
 
 const calculateAssessmentStats = (details) => {
   if (!details || !details.recommendations?.weak_areas) return { total: 0, correct: 0, incorrect: 0 };
-  const total = details.recommendations.weak_areas.length + (details.score / 100 * 5);
-  const correct = Math.round(total * (details.score / 100));
-  const incorrect = total - correct;
+  const total = details.total_questions || 0;
+  const correct = details.correct_answers || 0;
+  const incorrect = details.incorrect_answers || 0;
   return { total, correct, incorrect };
 };
 

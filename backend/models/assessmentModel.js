@@ -1,8 +1,8 @@
 import pool from "../DB/db.js";
 import { findResourceById } from "./resourceModel.js";
-import { getCreationModel, mapLanguageCode } from "../services/geminiService.js";
+import { getCreationModel, mapLanguageCode, generateContent } from "../services/geminiService.js";
 
-export const ensureAssessmentsTable = async () => {
+const ensureAssessmentsTable = async () => {
   try {
     const tableCheck = await pool.query(`
       SELECT EXISTS (
@@ -43,7 +43,7 @@ export const ensureAssessmentsTable = async () => {
   }
 };
 
-export const ensureQuestionBlocksTable = async () => {
+const ensureQuestionBlocksTable = async () => {
   try {
     const tableCheck = await pool.query(`
       SELECT EXISTS (
@@ -86,7 +86,6 @@ export const ensureQuestionBlocksTable = async () => {
             ADD COLUMN IF NOT EXISTS num_second_side INTEGER,
             ADD COLUMN IF NOT EXISTS positive_marks NUMERIC,
             ADD COLUMN IF NOT EXISTS negative_marks NUMERIC;
-          -- Update existing columns to NUMERIC if they are still INTEGER
           ALTER TABLE question_blocks
             ALTER COLUMN positive_marks TYPE NUMERIC USING (positive_marks::NUMERIC),
             ALTER COLUMN negative_marks TYPE NUMERIC USING (negative_marks::NUMERIC);
@@ -106,7 +105,7 @@ export const ensureQuestionBlocksTable = async () => {
   }
 };
 
-export const ensureAssessmentResourcesTable = async () => {
+const ensureAssessmentResourcesTable = async () => {
   try {
     const tableCheck = await pool.query(`
       SELECT EXISTS (
@@ -137,7 +136,7 @@ export const ensureAssessmentResourcesTable = async () => {
   }
 };
 
-export const ensureEnrollmentsTable = async () => {
+const ensureEnrollmentsTable = async () => {
   try {
     const tableCheck = await pool.query(`
       SELECT EXISTS (
@@ -169,7 +168,7 @@ export const ensureEnrollmentsTable = async () => {
   }
 };
 
-export const ensureResourceChunksTable = async () => {
+const ensureResourceChunksTable = async () => {
   try {
     const tableCheck = await pool.query(`
       SELECT EXISTS (
@@ -201,7 +200,148 @@ export const ensureResourceChunksTable = async () => {
   }
 };
 
-export const createAssessment = async (assessmentData) => {
+const ensureGeneratedQuestionsTable = async () => {
+  try {
+    const tableCheck = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'generated_questions'
+      )
+    `);
+    if (!tableCheck.rows[0].exists) {
+      console.log("Creating generated_questions table...");
+      await pool.query(`
+        CREATE TABLE generated_questions (
+          id SERIAL PRIMARY KEY,
+          attempt_id INTEGER REFERENCES assessment_attempts(id) ON DELETE CASCADE,
+          question_order INTEGER NOT NULL,
+          question_type VARCHAR(50) NOT NULL,
+          question_text TEXT NOT NULL,
+          options JSONB,
+          correct_answer TEXT,
+          positive_marks NUMERIC,
+          negative_marks NUMERIC,
+          duration_per_question INTEGER NOT NULL DEFAULT 180,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await pool.query(`
+        CREATE INDEX idx_generated_questions_attempt_id ON generated_questions(attempt_id);
+      `);
+      console.log("✅ generated_questions table created");
+    } else {
+      console.log("Checking for missing columns or type updates in generated_questions table...");
+      await pool.query(`
+        DO $$ 
+        BEGIN
+          ALTER TABLE generated_questions
+            ADD COLUMN IF NOT EXISTS positive_marks NUMERIC,
+            ADD COLUMN IF NOT EXISTS negative_marks NUMERIC,
+            ADD COLUMN IF NOT EXISTS duration_per_question INTEGER NOT NULL DEFAULT 180;
+          ALTER TABLE generated_questions
+            ALTER COLUMN positive_marks TYPE NUMERIC USING (positive_marks::NUMERIC),
+            ALTER COLUMN negative_marks TYPE NUMERIC USING (negative_marks::NUMERIC);
+        EXCEPTION
+          WHEN duplicate_column THEN
+            RAISE NOTICE 'Columns already exist';
+          WHEN invalid_column_reference THEN
+            RAISE NOTICE 'Column type update skipped due to invalid reference';
+        END;
+        $$;
+      `);
+      console.log("✅ generated_questions table updated with new columns and types");
+    }
+  } catch (error) {
+    console.error("❌ Error creating/updating generated_questions table:", error);
+    throw error;
+  }
+};
+
+const ensureAssessmentAttemptsTable = async () => {
+  try {
+    const tableCheck = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'assessment_attempts'
+      )
+    `);
+    if (!tableCheck.rows[0].exists) {
+      console.log("Creating assessment_attempts table...");
+      await pool.query(`
+        CREATE TABLE assessment_attempts (
+          id SERIAL PRIMARY KEY,
+          student_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+          assessment_id INTEGER REFERENCES assessments(id) ON DELETE CASCADE,
+          attempt_number INTEGER NOT NULL,
+          started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          language VARCHAR(10),
+          status VARCHAR(20) NOT NULL DEFAULT 'in_progress',
+          completed_at TIMESTAMP WITH TIME ZONE,
+          score NUMERIC DEFAULT 0
+        )
+      `);
+      await pool.query(`
+        CREATE INDEX idx_assessment_attempts_student_id ON assessment_attempts(student_id);
+        CREATE INDEX idx_assessment_attempts_assessment_id ON assessment_attempts(assessment_id);
+      `);
+      console.log("✅ assessment_attempts table created");
+    } else {
+      console.log("Checking for score column type update in assessment_attempts table...");
+      await pool.query(`
+        DO $$ 
+        BEGIN
+          ALTER TABLE assessment_attempts
+            ALTER COLUMN score TYPE NUMERIC USING (COALESCE(score, 0)::NUMERIC),
+            ALTER COLUMN score SET DEFAULT 0;
+        EXCEPTION
+          WHEN invalid_column_reference THEN
+            RAISE NOTICE 'Column type update skipped due to invalid reference';
+        END;
+        $$;
+      `);
+      console.log("✅ assessment_attempts table updated with score as NUMERIC");
+    }
+  } catch (error) {
+    console.error("❌ Error creating/updating assessment_attempts table:", error);
+    throw error;
+  }
+};
+
+const ensureStudentAnswersTable = async () => {
+  try {
+    const tableCheck = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'student_answers'
+      )
+    `);
+    if (!tableCheck.rows[0].exists) {
+      console.log("Creating student_answers table...");
+      await pool.query(`
+        CREATE TABLE student_answers (
+          id SERIAL PRIMARY KEY,
+          attempt_id INTEGER REFERENCES assessment_attempts(id) ON DELETE CASCADE,
+          question_id INTEGER REFERENCES generated_questions(id) ON DELETE CASCADE,
+          student_answer TEXT,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await pool.query(`
+        CREATE INDEX idx_student_answers_attempt_id ON student_answers(attempt_id);
+        CREATE INDEX idx_student_answers_question_id ON student_answers(question_id);
+      `);
+      console.log("✅ student_answers table created");
+    }
+  } catch (error) {
+    console.error("❌ Error creating student_answers table:", error);
+    throw error;
+  }
+};
+
+const createAssessment = async (assessmentData) => {
   const { title, prompt, external_links, instructor_id, is_executed = false } = assessmentData;
   const query = `
     INSERT INTO assessments (title, prompt, external_links, instructor_id, is_executed)
@@ -219,7 +359,7 @@ export const createAssessment = async (assessmentData) => {
   }
 };
 
-export const storeQuestionBlocks = async (assessmentId, questionBlocks, instructorId) => {
+const storeQuestionBlocks = async (assessmentId, questionBlocks, instructorId) => {
   try {
     await pool.query("DELETE FROM question_blocks WHERE assessment_id = $1", [assessmentId]);
     for (const block of questionBlocks) {
@@ -244,12 +384,12 @@ export const storeQuestionBlocks = async (assessmentId, questionBlocks, instruct
           assessmentId,
           question_type,
           question_count,
-          duration_per_question,
+          duration_per_question || 120, // Align with table default
           num_options || null,
           num_first_side || null,
           num_second_side || null,
-          positive_marks || null,
-          negative_marks || null,
+          positive_marks !== undefined ? Number(positive_marks) : null, // Ensure numeric
+          negative_marks !== undefined ? Number(negative_marks) : null, // Ensure numeric
           instructorId,
         ]
       );
@@ -261,7 +401,7 @@ export const storeQuestionBlocks = async (assessmentId, questionBlocks, instruct
   }
 };
 
-export const getAssessmentsByInstructor = async (instructorId) => {
+const getAssessmentsByInstructor = async (instructorId) => {
   const query = `
     SELECT a.*, 
            COALESCE(
@@ -310,7 +450,7 @@ export const getAssessmentsByInstructor = async (instructorId) => {
   }
 };
 
-export const getAssessmentById = async (assessment_id, user_id, user_role) => {
+const getAssessmentById = async (assessment_id, user_id, user_role) => {
   try {
     if (!assessment_id || isNaN(parseInt(assessment_id))) {
       throw new Error("Invalid assessment ID");
@@ -410,7 +550,7 @@ export const getAssessmentById = async (assessment_id, user_id, user_role) => {
   }
 };
 
-export const updateAssessment = async (assessmentId, updateData) => {
+const updateAssessment = async (assessmentId, updateData) => {
   const { title, prompt, external_links } = updateData;
   const query = `
     UPDATE assessments
@@ -430,7 +570,7 @@ export const updateAssessment = async (assessmentId, updateData) => {
   }
 };
 
-export const deleteAssessment = async (assessmentId) => {
+const deleteAssessment = async (assessmentId) => {
   try {
     const { rows } = await pool.query("DELETE FROM assessments WHERE id = $1 RETURNING *", [assessmentId]);
     if (rows.length === 0) throw new Error("Assessment not found");
@@ -441,7 +581,7 @@ export const deleteAssessment = async (assessmentId) => {
   }
 };
 
-export const storeResourceChunk = async (resourceId, chunkText, embedding, metadata) => {
+const storeResourceChunk = async (resourceId, chunkText, embedding, metadata) => {
   try {
     if (!Array.isArray(embedding) || embedding.length !== 384) {
       throw new Error("Invalid embedding: must be an array of 384 numbers");
@@ -452,7 +592,7 @@ export const storeResourceChunk = async (resourceId, chunkText, embedding, metad
       VALUES ($1, $2, $3::vector, $4)
       RETURNING *
     `;
-    const values = [resourceId, chunkText, `[${embedding.join(',')}]`, metadata.chunk_index];
+    const values = [resourceId, chunkText, embeddingString, metadata.chunk_index];
     const { rows } = await pool.query(query, values);
     console.log(`✅ Stored chunk for resource ${resourceId}, index ${metadata.chunk_index}`);
     return rows[0];
@@ -462,11 +602,10 @@ export const storeResourceChunk = async (resourceId, chunkText, embedding, metad
   }
 };
 
-export const generateAssessmentQuestions = async (assessmentId, attemptId, language, assessment) => {
+const generateAssessmentQuestions = async (assessmentId, attemptId, language, assessment) => {
   const { rows: blockRows } = await pool.query(
-    `SELECT question_type, question_count, COALESCE(duration_per_question, 180) AS duration_per_question, num_options, num_first_side, num_second_side, positive_marks, negative_marks 
-     FROM question_blocks 
-     WHERE assessment_id = $1`,
+    `SELECT question_type, question_count, duration_per_question, num_options, num_first_side, num_second_side, positive_marks, negative_marks
+     FROM question_blocks WHERE assessment_id = $1`,
     [assessmentId]
   );
   if (blockRows.length === 0) {
@@ -478,27 +617,29 @@ export const generateAssessmentQuestions = async (assessmentId, attemptId, langu
   const typeCountsStr = blockRows.map(b => `${b.question_count} ${b.question_type}`).join(", ");
 
   let questions = [];
-  const model = getCreationModel("gemini-1.5-flash");
+  const client = await getCreationModel();
   const langName = mapLanguageCode(language);
   let questionPrompt = `Generate a complete and valid JSON array of unique assessment questions in ${langName} based on the assessment title "${assessment.title}" and prompt "${assessment.prompt || 'No additional info provided'}". Follow these rules strictly:
   1. Start with: [
-  2. Each question must have: id, question_type, question_text, options (array of num_options for multiple_choice, array of pairs for matching with num_first_side and num_second_side, null for true_false or short_answer), correct_answer (string for multiple_choice/short_answer, boolean for true_false, array of pairs for matching), marks.
+  2. Each question must have: id, question_type, question_text, options (array of num_options for multiple_choice, array of pairs for matching with num_first_side and num_second_side, null for true_false or short_answer), correct_answer (string for multiple_choice/short_answer, boolean for true_false, array of pairs for matching), positive_marks, negative_marks, duration_per_question.
   3. Use only the following question types: ${questionTypes.join(", ")}.
   4. Include exactly these counts: ${typeCountsStr}. Total questions: ${numQuestions}. Ensure no repetition within this set.
   5. For multiple_choice: ${blockRows.filter(b => b.question_type === "multiple_choice").map(b => `${b.question_count} questions with ${b.num_options || 4} options`).join(", ") || "none"}.
   6. For matching: ${blockRows.filter(b => b.question_type === "matching").map(b => `${b.question_count} questions with ${b.num_first_side || 4} first-side and ${b.num_second_side || 4} second-side options`).join(", ") || "none"}.
-  7. Marks: Use positive_marks=${blockRows.map(b => b.positive_marks || 1).join(", ")} and negative_marks=${blockRows.map(b => b.negative_marks || 0).join(", ")} where specified.
-  8. End with: ]
-  9. No extra text, comments, or incomplete objects. Ensure all fields are present and valid.
+  7. Marks: Use positive_marks=${blockRows.map(b => b.positive_marks || 1).join(", ")} and negative_marks=${blockRows.map(b => b.negative_marks || 0).join(", ")} for each question type.
+  8. Duration: Use duration_per_question=${blockRows.map(b => b.duration_per_question || 180).join(", ")} seconds for each question type.
+  9. End with: ]
+  10. No extra text, comments, or incomplete objects. Ensure all fields are present and valid.
   External links for context: ${(assessment.external_links || []).join(", ")}`;
 
   try {
-    const gen = await model.generateContent({
+    const response = await client.models.generateContent({
+      model: "gemini-2.5-flash",
       contents: [{ role: "user", parts: [{ text: questionPrompt }] }],
       generationConfig: { maxOutputTokens: 4000, temperature: 0.7 },
     });
-    const text = (await gen.response).text();
-    console.log(`📝 Raw Gemini response:`, text);
+    const text = response.text || (response.candidates && response.candidates[0]?.content?.parts?.[0]?.text) || "";
+    console.log(`📝 Raw Gemini response (first 500 chars):`, text.substring(0, 500));
     const jsonMatch = text.match(/\[[\s\S]*\]/);
     if (jsonMatch) {
       try {
@@ -508,6 +649,7 @@ export const generateAssessmentQuestions = async (assessmentId, attemptId, langu
         }
         if (questions.length > numQuestions) {
           questions = questions.slice(0, numQuestions);
+          console.warn(`⚠️ Truncated ${questions.length - numQuestions} excess questions`);
         }
         const invalidTypes = questions.filter(q => !questionTypes.includes(q.question_type));
         if (invalidTypes.length > 0) {
@@ -517,16 +659,18 @@ export const generateAssessmentQuestions = async (assessmentId, attemptId, langu
           q.id === undefined ||
           q.question_text === undefined ||
           q.correct_answer === undefined ||
-          q.marks === undefined ||
+          q.positive_marks === undefined ||
+          q.negative_marks === undefined ||
+          q.duration_per_question === undefined ||
           (q.question_type === "multiple_choice" && (!q.options || q.options.length !== (blockRows.find(b => b.question_type === "multiple_choice")?.num_options || 4))) ||
           (q.question_type === "matching" && (!q.options || !Array.isArray(q.options) || q.options.length !== (blockRows.find(b => b.question_type === "matching")?.num_first_side || 4) || !q.correct_answer || !Array.isArray(q.correct_answer) || q.correct_answer.length !== (blockRows.find(b => b.question_type === "matching")?.num_first_side || 4)))
         );
         if (missingFields.length > 0) {
-          throw new Error("Missing required fields in some questions");
+          throw new Error(`Missing required fields in ${missingFields.length} questions`);
         }
         const uniqueQuestions = new Set(questions.map(q => q.question_text));
         if (uniqueQuestions.size !== questions.length) {
-          throw new Error("Duplicate questions detected");
+          throw new Error(`Duplicate questions detected: ${questions.length - uniqueQuestions.size} duplicates`);
         }
         const generatedCounts = questions.reduce((acc, q) => {
           acc[q.question_type] = (acc[q.question_type] || 0) + 1;
@@ -541,24 +685,24 @@ export const generateAssessmentQuestions = async (assessmentId, attemptId, langu
           throw new Error("Generated question counts per type do not match instructor settings");
         }
       } catch (e) {
-        console.error(`❌ Invalid JSON from Gemini:`, e.message);
+        console.error(`❌ Invalid JSON from Gemini:`, e.message, "Raw text sample:", jsonMatch[0].substring(0, 500));
         questions = [];
       }
     } else {
-      console.warn(`⚠️ No valid JSON array found in response`);
+      console.warn(`⚠️ No valid JSON array found in response, sample:`, text.substring(0, 500));
       questions = [];
     }
   } catch (e) {
-    console.error(`❌ Failed to generate questions from Gemini:`, e.message);
+    console.error(`❌ Failed to generate questions from Gemini:`, e.message, "Prompt sample:", questionPrompt.substring(0, 500));
     questions = [];
   }
 
   if (!Array.isArray(questions) || questions.length === 0) {
     console.log(`🔄 Falling back to instructor-defined question structure for ${numQuestions} questions`);
     questions = blockRows.flatMap(block => {
-      const { question_type, question_count, num_options, num_first_side, num_second_side, positive_marks, negative_marks } = block;
+      const { question_type, question_count, duration_per_question, num_options, num_first_side, num_second_side, positive_marks, negative_marks } = block;
       return Array.from({ length: question_count }, (_, index) => ({
-        id: `${assessmentId}-${question_type}-${index + 1}`,
+        id: `${attemptId}-${question_type}-${index + 1}`, // Use attemptId for uniqueness
         question_type,
         question_text: `Instructor-defined ${question_type} question ${index + 1} (to be replaced by student input)`,
         options: question_type === "multiple_choice" ? Array(num_options || 4).fill().map((_, i) => `Option ${String.fromCharCode(65 + i)}`) : 
@@ -567,7 +711,9 @@ export const generateAssessmentQuestions = async (assessmentId, attemptId, langu
                         question_type === "true_false" ? true : 
                         question_type === "matching" ? Array(num_first_side || 4).fill().map((_, i) => [`Item ${i + 1}`, `Match ${i + 1}`]) : 
                         "Sample answer",
-        marks: positive_marks || 1,
+        positive_marks: positive_marks || 1,
+        negative_marks: negative_marks || 0,
+        duration_per_question: duration_per_question || 180,
       }));
     });
   }
@@ -579,20 +725,20 @@ export const generateAssessmentQuestions = async (assessmentId, attemptId, langu
   for (let i = 0; i < questions.length; i++) {
     const q = questions[i];
     const options = Array.isArray(q.options) ? JSON.stringify(q.options) : null;
+    console.log(`📋 Inserting question ${i + 1}:`, { id: q.id, question_text: q.question_text.substring(0, 50), options, correct_answer: q.correct_answer });
     await pool.query(
-      `INSERT INTO generated_questions (attempt_id, question_order, question_type, question_text, options, correct_answer, marks)
-       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)`,
-      [attemptId, i + 1, q.question_type, q.question_text, options, q.correct_answer, q.marks]
+      `INSERT INTO generated_questions (attempt_id, question_order, question_type, question_text, options, correct_answer, positive_marks, negative_marks, duration_per_question)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9)`,
+      [attemptId, i + 1, q.question_type, q.question_text, options, q.correct_answer, q.positive_marks, q.negative_marks, q.duration_per_question]
     );
   }
 
-  const duration = blockRows.reduce((sum, block) => sum + block.question_count * (block.duration_per_question || 180), 0) / 60;
-  console.log(`✅ Calculated duration: ${duration} minutes for ${numQuestions} questions`);
+  const totalDuration = blockRows.reduce((sum, block) => sum + block.question_count * (block.duration_per_question || 180), 0);
 
-  return { questions, duration };
+  return { questions, totalDuration };
 };
 
-export const enrollStudent = async (assessmentId, studentEmail) => {
+const enrollStudent = async (assessmentId, studentEmail) => {
   try {
     const userQuery = await pool.query("SELECT id FROM users WHERE email = $1", [studentEmail]);
     if (userQuery.rows.length === 0) {
@@ -618,7 +764,7 @@ export const enrollStudent = async (assessmentId, studentEmail) => {
   }
 };
 
-export const unenrollStudent = async (assessmentId, studentId) => {
+const unenrollStudent = async (assessmentId, studentId) => {
   try {
     const query = `
       DELETE FROM enrollments
@@ -637,7 +783,7 @@ export const unenrollStudent = async (assessmentId, studentId) => {
   }
 };
 
-export const getEnrolledStudents = async (assessmentId) => {
+const getEnrolledStudents = async (assessmentId) => {
   try {
     const query = `
       SELECT u.id, u.name, u.email
@@ -654,7 +800,7 @@ export const getEnrolledStudents = async (assessmentId) => {
   }
 };
 
-export const clearLinksForAssessment = async (assessmentId) => {
+const clearLinksForAssessment = async (assessmentId) => {
   try {
     const query = `
       UPDATE assessments
@@ -674,20 +820,48 @@ export const clearLinksForAssessment = async (assessmentId) => {
   }
 };
 
-export const init = async () => {
+const init = async () => {
   try {
     if (!pool) {
       throw new Error("Database pool not initialized");
     }
-    // Create tables in order to respect foreign key dependencies
+    // Ensure tables are created in dependency order
     await ensureAssessmentsTable();
     await ensureQuestionBlocksTable();
     await ensureAssessmentResourcesTable();
     await ensureEnrollmentsTable();
     await ensureResourceChunksTable();
+    await ensureAssessmentAttemptsTable(); // Before generated_questions
+    await ensureGeneratedQuestionsTable();
+    await ensureStudentAnswersTable();
     console.log("✅ All assessment-related tables initialized successfully");
   } catch (error) {
     console.error("❌ Error initializing assessment tables:", error);
     throw error;
   }
+};
+
+// Export all necessary functions
+export {
+  ensureAssessmentsTable,
+  ensureQuestionBlocksTable,
+  ensureAssessmentResourcesTable,
+  ensureEnrollmentsTable,
+  ensureResourceChunksTable,
+  ensureGeneratedQuestionsTable,
+  ensureAssessmentAttemptsTable,
+  ensureStudentAnswersTable,
+  createAssessment,
+  storeQuestionBlocks,
+  getAssessmentsByInstructor,
+  getAssessmentById,
+  updateAssessment,
+  deleteAssessment,
+  storeResourceChunk,
+  generateAssessmentQuestions,
+  enrollStudent,
+  unenrollStudent,
+  getEnrolledStudents,
+  clearLinksForAssessment,
+  init,
 };

@@ -1,3 +1,4 @@
+// models/studentAnalyticsModel.js
 import db from "../DB/db.js";
 import { getCreationModel, generateContent } from "../services/geminiService.js";
 
@@ -15,7 +16,6 @@ export const getStudentAnalytics = async (studentId) => {
   try {
     console.log(`📊 Getting analytics for student ${studentId}`);
 
-    // Get enrolled assessments (available for the dashboard)
     const enrolledAssessments = await db.query(`
       SELECT 
         a.id,
@@ -28,7 +28,6 @@ export const getStudentAnalytics = async (studentId) => {
       ORDER BY e.enrolled_at DESC
     `, [studentId]);
 
-    // Get all completed assessments with calculated percentage
     const completedAssessments = await db.query(`
       SELECT 
         a.id,
@@ -280,7 +279,11 @@ export const getAssessmentAnalytics = async (studentId, assessmentId) => {
       SELECT 
         aa.id as attempt_id,
         EXTRACT(EPOCH FROM (aa.completed_at - aa.started_at)) as time_taken,
-        a.title as assessment_title
+        a.title as assessment_title,
+        a.created_at as assessment_created_at,
+        aa.score as student_score,
+        aa.max_score,
+        aa.percentage
       FROM assessment_attempts aa
       JOIN assessments a ON aa.assessment_id = a.id
       WHERE aa.student_id = $1 
@@ -295,36 +298,44 @@ export const getAssessmentAnalytics = async (studentId, assessmentId) => {
       throw new Error('No completed attempt found for this assessment');
     }
 
-    const { attempt_id, time_taken, assessment_title } = attempt.rows[0];
+    const { attempt_id, time_taken, assessment_title, assessment_created_at, student_score, max_score, percentage } = attempt.rows[0];
 
-    const totalStats = await db.query(`
+    const fallbackStats = await db.query(`
       SELECT 
-        SUM(sa.score) as total_score,
-        SUM(gq.marks) as total_marks
-      FROM student_answers sa
-      JOIN generated_questions gq ON sa.question_id = gq.id
-      WHERE sa.attempt_id = $1
+        COALESCE(SUM(gq.marks), 0) as total_marks
+      FROM generated_questions gq
+      WHERE gq.attempt_id = $1
     `, [attempt_id]);
+    const { total_marks } = fallbackStats.rows[0];
+    const calc_percentage = total_marks > 0 ? Math.round((student_score / total_marks) * 100) : 0;
 
-    const { total_score, total_marks } = totalStats.rows[0] || { total_score: 0, total_marks: 0 };
-    const percentage = total_marks > 0 ? Math.round((total_score / total_marks) * 100) : 0;
+    const questionStats = await db.query(`
+      SELECT 
+        COUNT(DISTINCT gq.id) as total_questions,
+        SUM(CASE WHEN LOWER(TRIM(REPLACE(sa.student_answer, '"', ''))) = LOWER(TRIM(REPLACE(gq.correct_answer, '"', ''))) THEN 1 ELSE 0 END) as correct_answers,
+        COUNT(DISTINCT gq.id) - SUM(CASE WHEN LOWER(TRIM(REPLACE(sa.student_answer, '"', ''))) = LOWER(TRIM(REPLACE(gq.correct_answer, '"', ''))) THEN 1 ELSE 0 END) as incorrect_answers,
+        SUM(CASE WHEN LOWER(TRIM(REPLACE(sa.student_answer, '"', ''))) != LOWER(TRIM(REPLACE(gq.correct_answer, '"', ''))) THEN COALESCE(gq.negative_marks, 0) ELSE 0 END) as negative_marks_applied
+      FROM generated_questions gq
+      LEFT JOIN student_answers sa ON sa.question_id = gq.id AND sa.attempt_id = $1
+      WHERE gq.attempt_id = $1
+    `, [attempt_id]);
 
     const weak_questions = await db.query(`
       SELECT 
         gq.question_type,
         gq.question_text,
-        sa.score / gq.marks as performance,
+        (sa.score::NUMERIC / NULLIF(gq.marks, 0)) as performance,
         sa.score as scored_marks,
         gq.marks
       FROM student_answers sa
       JOIN generated_questions gq ON sa.question_id = gq.id
       WHERE sa.attempt_id = $1
-        AND sa.score <= gq.marks * 0.6
+        AND (sa.score::NUMERIC / NULLIF(gq.marks, 0)) <= 0.6
       ORDER BY performance ASC
     `, [attempt_id]);
 
     const client = await getCreationModel();
-    const prompt = `You are an educational AI assistant. Generate learning recommendations for the assessment "${assessment_title}" with score ${percentage}%. Weak questions: ${JSON.stringify(weak_questions.rows)}. If no weak questions, provide general recommendations for improvement. Respond ONLY with valid JSON: { "weak_areas": [{ "topic": "descriptive topic", "performance": number, "suggestion": "detailed suggestion" }], "study_plan": { "daily_practice": [{ "topic": "string", "focus": "string", "time_allocation": "string" }], "weekly_review": [{ "topic": "string", "activity": "string", "goal": "string" }] } }. Ensure JSON is parseable.`;
+    const prompt = `You are an educational AI assistant. Generate learning recommendations for the assessment "${assessment_title}" with score ${percentage || calc_percentage}%. Weak questions: ${JSON.stringify(weak_questions.rows)}. If no weak questions, provide general recommendations for improvement. Respond ONLY with valid JSON: { "weak_areas": [{ "topic": "descriptive topic", "performance": number, "suggestion": "detailed suggestion" }], "study_plan": { "daily_practice": [{ "topic": "string", "focus": "string", "time_allocation": "string" }], "weekly_review": [{ "topic": "string", "activity": "string", "goal": "string" }] } }. Ensure JSON is parseable.`;
     let responseText = await generateContent(client, prompt, {
       generationConfig: { maxOutputTokens: 1000, temperature: 0.7, response_mime_type: 'application/json' },
       thinkingConfig: { thinkingBudget: 0 },
@@ -339,24 +350,17 @@ export const getAssessmentAnalytics = async (studentId, assessmentId) => {
 
     try {
       recommendations = JSON.parse(responseText);
-      if (!recommendations.weak_areas || !Array.isArray(recommendations.weak_areas) ||
-          !recommendations.study_plan || !recommendations.study_plan.daily_practice ||
-          !recommendations.study_plan.weekly_review) {
-        throw new Error('Invalid AI response structure');
-      }
     } catch (parseError) {
       console.error("❌ AI recommendation parsing error:", parseError);
-      console.log("Debug: Raw response text:", responseText);
-      console.log("Falling back to default recommendations");
       recommendations = {
         weak_areas: weak_questions.rows.map(area => ({
           topic: area.question_type || 'General',
-          performance: Math.round(area.performance * 100),
+          performance: Math.round((area.performance || 0) * 100),
           suggestion: getSuggestionForArea(area.question_type, 'medium')
         })),
         study_plan: generateStudyPlan(weak_questions.rows.map(area => ({
           topic: area.question_type || 'General',
-          performance: Math.round(area.performance * 100),
+          performance: Math.round((area.performance || 0) * 100),
           suggestion: getSuggestionForArea(area.question_type, 'medium')
         })))
       };
@@ -364,8 +368,15 @@ export const getAssessmentAnalytics = async (studentId, assessmentId) => {
 
     return {
       assessment_title,
-      score: percentage,
-      time_taken: Math.floor(time_taken), // Fix decimal
+      assessment_created_at,
+      score: calc_percentage,
+      time_taken: Math.floor(time_taken || 0),
+      total_questions: questionStats.rows[0].total_questions || 0,
+      correct_answers: questionStats.rows[0].correct_answers || 0,
+      incorrect_answers: questionStats.rows[0].incorrect_answers || 0,
+      negative_marks_applied: questionStats.rows[0].negative_marks_applied || 0,
+      total_marks: total_marks,
+      student_score: student_score,
       weak_areas: recommendations.weak_areas,
       recommendations: recommendations
     };
@@ -546,5 +557,75 @@ const getRecommendedAssessments = async (studentId) => {
   } catch (error) {
     console.error("❌ Error getting recommended assessments:", error);
     return [];
+  }
+};
+
+/**
+ * Get questions and answers for a specific assessment attempt
+ * @param {number} studentId - Student ID
+ * @param {number} assessmentId - Assessment ID
+ * @returns {Array} List of questions with answers and scores
+ */
+export const getAssessmentQuestions = async (studentId, assessmentId) => {
+  try {
+    // First get the latest completed attempt
+    const attemptQuery = `
+      SELECT id as attempt_id
+      FROM assessment_attempts
+      WHERE student_id = $1 AND assessment_id = $2 AND completed_at IS NOT NULL AND status = 'completed'
+      ORDER BY completed_at DESC
+      LIMIT 1
+    `;
+    const attemptRes = await db.query(attemptQuery, [studentId, assessmentId]);
+    if (attemptRes.rows.length === 0) {
+      throw new Error('No completed attempt found for this assessment');
+    }
+    const attemptId = attemptRes.rows[0].attempt_id;
+
+    // Now get questions
+    const questionsQuery = `
+      SELECT 
+        gq.id,
+        gq.question_order,
+        gq.question_text,
+        gq.question_type,
+        gq.options,
+        gq.marks,
+        gq.correct_answer,
+        sa.student_answer,
+        sa.score,
+        sa.is_correct,
+        gq.negative_marks
+      FROM generated_questions gq
+      LEFT JOIN student_answers sa ON sa.question_id = gq.id AND sa.attempt_id = $1
+      WHERE gq.attempt_id = $1
+      ORDER BY gq.question_order
+    `;
+    const questionsRes = await db.query(questionsQuery, [attemptId]);
+
+    return questionsRes.rows.map(q => {
+      // Normalize and compare answers
+      const normalizedStudentAnswer = (q.student_answer || '').trim().replace(/"/g, '').toLowerCase();
+      const normalizedCorrectAnswer = (q.correct_answer || '').trim().replace(/"/g, '').toLowerCase();
+      const computedIsCorrect = normalizedStudentAnswer === normalizedCorrectAnswer;
+      const computedScore = computedIsCorrect ? q.marks : (q.negative_marks || 0);
+
+      return {
+        question_id: q.id,
+        question_order: q.question_order,
+        question: q.question_text,
+        type: q.question_type,
+        options: q.options,
+        max_marks: q.marks,
+        correct_answer: q.correct_answer,
+        student_answer: q.student_answer,
+        score: computedScore,
+        is_correct: computedIsCorrect,
+        negative_marks: q.negative_marks
+      };
+    });
+  } catch (error) {
+    console.error("❌ Error getting assessment questions:", error);
+    throw error;
   }
 };

@@ -39,7 +39,7 @@ const useStudentAssessmentStore = create((set, get) => ({
             console.log(`📋 Processing question ${q.id}: options = ${q.options}, correct_answer = ${JSON.stringify(q.correct_answer)}`);
             let parsedOptions = null;
             try {
-              parsedOptions = q.options ? JSON.parse(q.options) : null;
+              parsedOptions = q.options ? (typeof q.options === 'string' ? JSON.parse(q.options) : q.options) : null;
               if (!Array.isArray(parsedOptions)) {
                 console.warn(`⚠️ Invalid options format for question ${q.id}:`, q.options);
                 parsedOptions = null;
@@ -53,6 +53,9 @@ const useStudentAssessmentStore = create((set, get) => ({
               answer: null,
               options: parsedOptions,
               correct_answer: q.correct_answer,
+              positive_marks: q.positive_marks,
+              negative_marks: q.negative_marks,
+              duration_per_question: q.duration_per_question,
             };
           }),
           timeRemaining: (response.data.data.duration || 15) * 60,
@@ -91,15 +94,15 @@ const useStudentAssessmentStore = create((set, get) => ({
   submitAssessment: async (assessmentId) => {
     const { attemptId, hasStarted, language, assessmentQuestions } = get();
     if (!hasStarted || !attemptId) {
-      console.warn("⚠️ Cannot submit: Assessment not started or attemptId missing");
-      set({ error: "Cannot submit: Assessment not started", loading: false });
+      console.warn("⚠️ Cannot submit: Assessment not started");
+      set({ error: "Assessment not started", loading: false });
       return;
     }
     set({ loading: true, error: null });
     try {
       const token = localStorage.getItem("token");
       if (!token) {
-        console.warn("⚠️ No token found in localStorage for submit");
+        console.warn("⚠️ No token found in localStorage");
         set({ error: "Please log in to submit the assessment", loading: false });
         const navigate = useNavigate();
         navigate("/login");
@@ -107,21 +110,17 @@ const useStudentAssessmentStore = create((set, get) => ({
       }
       const answers = assessmentQuestions.map((q) => ({
         questionId: q.id,
-        answer: q.answer || null,
+        answer: q.answer,
       }));
-      if (answers.filter((a) => a.answer !== undefined).length < assessmentQuestions.length) {
-        throw new Error(`Please answer all ${assessmentQuestions.length} questions before submitting.`);
-      }
-      console.log(`📝 Submitting assessment ${assessmentId}, attemptId: ${attemptId}`);
+      console.log(`📝 Submitting assessment ${assessmentId}, attempt ${attemptId}, answers:`, answers);
       const response = await axios.post(
         `${API_URL}/taking/assessments/${assessmentId}/submit`,
-        { answers, attemptId, language },
+        { attemptId, answers, language },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (response.data.success) {
         set({ isSubmitted: true, loading: false, submission: response.data.data });
-        console.log(`✅ Assessment ${assessmentId} submitted successfully`);
-        // Refresh analytics data
+        // Update analytics
         useStudentAnalyticsStore.getState().fetchOverview();
         useStudentAnalyticsStore.getState().fetchPerformance();
         useStudentAnalyticsStore.getState().fetchRecommendations();

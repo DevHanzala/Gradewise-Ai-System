@@ -20,5 +20,3 @@ router.get("/submissions/:submissionId", protect, authorizeRoles(["student", "in
 router.get("/assessments/:assessmentId/print", protect, authorizeRoles(["instructor", "admin", "super_admin"]), getAssessmentForInstructorPrint)
 
 export default router
-
-

@@ -1,3 +1,4 @@
+// frontend/src/Pages/Student/StudentAnalytics.jsx
 import { useState, useEffect } from "react";
 import { Card, CardHeader, CardContent } from "../../components/ui/Card";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
@@ -6,7 +7,8 @@ import Footer from "../../components/Footer";
 import toast from "react-hot-toast";
 import useStudentAnalyticsStore from "../../store/useStudentAnalyticsStore.js";
 import Recommendations from "../../components/Recommendations.jsx";
-import { FaCheck, FaTimes, FaClock, FaBook, FaChartLine } from "react-icons/fa";
+import { FaCheck, FaTimes, FaClock, FaBook, FaChartLine, FaEye } from "react-icons/fa";
+import axios from "axios";
 
 const StudentAnalytics = () => {
   const {
@@ -21,33 +23,56 @@ const StudentAnalytics = () => {
     downloadReport,
   } = useStudentAnalyticsStore();
 
+  const [showType, setShowType] = useState(null); // 'results' or 'questions' or null
+  const [questionsData, setQuestionsData] = useState([]);
+  const [questionsLoading, setQuestionsLoading] = useState(false);
+
   useEffect(() => {
     fetchAssessments();
   }, [fetchAssessments]);
 
   useEffect(() => {
-    if (selectedAssessment) {
+    if (selectedAssessment && showType === 'results') {
       fetchAssessmentDetails(selectedAssessment).then(() => {
         console.log("Selected Assessment Details:", selectedAssessmentDetails);
       }).catch(err => console.error("Error fetching details:", err));
     }
-  }, [selectedAssessment, fetchAssessmentDetails]);
+  }, [selectedAssessment, showType, fetchAssessmentDetails]);
 
   const formatTime = (seconds) => {
-    if (isNaN(seconds) || seconds <= 0) return "0h 0m 0s";
+    if (isNaN(seconds) || seconds <= 0) return "0m 0s";
     seconds = Math.floor(seconds);
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
+    const minutes = Math.floor(seconds / 60);
     const remainingSeconds = seconds % 60;
-    return `${hours}h ${minutes}m ${remainingSeconds}s`;
+    return `${minutes}m ${remainingSeconds}s`;
   };
 
-  const calculateAssessmentStats = (details) => {
-    if (!details || !details.recommendations?.weak_areas) return { total: 0, correct: 0, incorrect: 0 };
-    const total = details.recommendations.weak_areas.length + (details.score / 100 * 5); // Assuming 5 questions
-    const correct = Math.round(total * (details.score / 100));
-    const incorrect = total - correct;
-    return { total, correct, incorrect };
+  const handleSeeResults = (assessmentId) => {
+    setSelectedAssessment(assessmentId);
+    setShowType('results');
+    setQuestionsData([]); // Clear questions if switching
+  };
+
+  const handleSeeQuestions = async (assessmentId) => {
+    setSelectedAssessment(assessmentId);
+    setShowType('questions');
+    setQuestionsLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+      const response = await axios.get(`${API_URL}/student-analytics/assessment/${assessmentId}/questions`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.data.success) {
+        setQuestionsData(response.data.data);
+      } else {
+        throw new Error(response.data.message || "Failed to fetch questions");
+      }
+    } catch (error) {
+      toast.error(error.message || "Failed to fetch questions and answers");
+    } finally {
+      setQuestionsLoading(false);
+    }
   };
 
   if (loading) {
@@ -88,17 +113,25 @@ const StudentAnalytics = () => {
                   {assessments.map((assessment) => (
                     <div
                       key={assessment.id}
-                      className={`p-4 border rounded-lg cursor-pointer hover:bg-gray-50 transition-all ${selectedAssessment === assessment.id ? 'bg-blue-50 border-blue-500' : ''}`}
-                      onClick={() => setSelectedAssessment(assessment.id)}
+                      className={`p-4 border rounded-lg transition-all ${selectedAssessment === assessment.id ? 'bg-blue-50 border-blue-500' : ''}`}
                     >
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <p className="font-medium text-gray-900">{assessment.title}</p>
-                          <p className="text-sm text-gray-600">Date: {new Date(assessment.date).toLocaleDateString()}</p>
-                        </div>
-                        <span className="text-sm font-medium text-gray-700">
-                          Score: {Math.round(assessment.percentage)}% <FaCheck className="inline text-green-500" />
-                        </span>
+                      <div>
+                        <p className="font-medium text-gray-900">{assessment.title}</p>
+                        <p className="text-sm text-gray-600">Date: {new Date(assessment.date).toLocaleDateString()}</p>
+                      </div>
+                      <div className="flex mt-2">
+                        <button
+                          onClick={() => handleSeeResults(assessment.id)}
+                          className="flex-1 px-3 py-1 bg-green-500 text-white rounded-l hover:bg-green-600 flex items-center justify-center"
+                        >
+                          <FaEye className="mr-1" /> See Results
+                        </button>
+                        <button
+                          onClick={() => handleSeeQuestions(assessment.id)}
+                          className="flex-1 px-3 py-1 bg-blue-500 text-white rounded-r hover:bg-blue-600 flex items-center justify-center"
+                        >
+                          <FaEye className="mr-1" /> See Questions
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -109,7 +142,7 @@ const StudentAnalytics = () => {
             </CardContent>
           </Card>
 
-          {selectedAssessment && selectedAssessmentDetails && (
+          {selectedAssessment && selectedAssessmentDetails && showType === 'results' && (
             <div className="mt-8 space-y-6">
               <Card className="shadow-lg bg-white rounded-xl">
                 <CardHeader className="bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-t-xl">
@@ -125,40 +158,62 @@ const StudentAnalytics = () => {
                     <div className="flex items-center">
                       <FaCheck className="text-green-500 mr-2" />
                       <p className="text-sm font-medium text-gray-600">Score</p>
-                      <p className="text-3xl font-bold text-gray-900 ml-2">{selectedAssessmentDetails.score}%</p>
+                      <p className="text-3xl font-bold text-gray-900 ml-2">{selectedAssessmentDetails.score || 0}%</p>
                     </div>
                     <div className="flex items-center">
                       <FaClock className="text-yellow-500 mr-2" />
                       <p className="text-sm font-medium text-gray-600">Time Taken</p>
                       <p className="text-lg font-medium text-gray-900 ml-2">{formatTime(selectedAssessmentDetails.time_taken || 0)}</p>
                     </div>
-                    {selectedAssessmentDetails.recommendations && (
-                      <div className="flex items-center">
-                        <FaChartLine className="text-purple-500 mr-2" />
-                        <p className="text-sm font-medium text-gray-600">Total Questions</p>
-                        <p className="text-lg font-medium text-gray-900 ml-2">
-                          {calculateAssessmentStats(selectedAssessmentDetails).total}
-                        </p>
-                      </div>
-                    )}
-                    {selectedAssessmentDetails.recommendations && (
-                      <div className="flex items-center">
-                        <FaCheck className="text-green-500 mr-2" />
-                        <p className="text-sm font-medium text-gray-600">Correct Answers</p>
-                        <p className="text-lg font-medium text-gray-900 ml-2">
-                          {calculateAssessmentStats(selectedAssessmentDetails).correct}
-                        </p>
-                      </div>
-                    )}
-                    {selectedAssessmentDetails.recommendations && (
-                      <div className="flex items-center">
-                        <FaTimes className="text-red-500 mr-2" />
-                        <p className="text-sm font-medium text-gray-600">Incorrect Answers</p>
-                        <p className="text-lg font-medium text-gray-900 ml-2">
-                          {calculateAssessmentStats(selectedAssessmentDetails).incorrect}
-                        </p>
-                      </div>
-                    )}
+                    <div className="flex items-center">
+                      <FaChartLine className="text-purple-500 mr-2" />
+                      <p className="text-sm font-medium text-gray-600">Total Questions</p>
+                      <p className="text-lg font-medium text-gray-900 ml-2">
+                        {selectedAssessmentDetails.total_questions || 0}
+                      </p>
+                    </div>
+                    <div className="flex items-center">
+                      <FaCheck className="text-green-500 mr-2" />
+                      <p className="text-sm font-medium text-gray-600">Correct Answers</p>
+                      <p className="text-lg font-medium text-gray-900 ml-2">
+                        {selectedAssessmentDetails.correct_answers || 0}
+                      </p>
+                    </div>
+                    <div className="flex items-center">
+                      <FaTimes className="text-red-500 mr-2" />
+                      <p className="text-sm font-medium text-gray-600">Incorrect Answers</p>
+                      <p className="text-lg font-medium text-gray-900 ml-2">
+                        {selectedAssessmentDetails.incorrect_answers || 0}
+                      </p>
+                    </div>
+                    <div className="flex items-center">
+                      <FaTimes className="text-red-500 mr-2" />
+                      <p className="text-sm font-medium text-gray-600">Negative Marks Applied</p>
+                      <p className="text-lg font-medium text-gray-900 ml-2">
+                        {selectedAssessmentDetails.negative_marks_applied ? `-${selectedAssessmentDetails.negative_marks_applied}` : 0}
+                      </p>
+                    </div>
+                    <div className="flex items-center">
+                      <FaChartLine className="text-purple-500 mr-2" />
+                      <p className="text-sm font-medium text-gray-600">Total Marks</p>
+                      <p className="text-lg font-medium text-gray-900 ml-2">
+                        {selectedAssessmentDetails.total_marks || 0}
+                      </p>
+                    </div>
+                    <div className="flex items-center">
+                      <FaCheck className="text-green-500 mr-2" />
+                      <p className="text-sm font-medium text-gray-600">Student Score</p>
+                      <p className="text-lg font-medium text-gray-900 ml-2">
+                        {selectedAssessmentDetails.student_score || 0}
+                      </p>
+                    </div>
+                    <div className="flex items-center">
+                      <FaClock className="text-yellow-500 mr-2" />
+                      <p className="text-sm font-medium text-gray-600">Created At</p>
+                      <p className="text-lg font-medium text-gray-900 ml-2">
+                        {new Date(selectedAssessmentDetails.assessment_created_at).toLocaleString() || 'N/A'}
+                      </p>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -172,7 +227,13 @@ const StudentAnalytics = () => {
                     <>
                       <h4 className="text-md font-semibold text-gray-700">Areas of Improvement</h4>
                       {selectedAssessmentDetails.recommendations.weak_areas && selectedAssessmentDetails.recommendations.weak_areas.length > 0 ? (
-                        <Recommendations recommendations={selectedAssessmentDetails.recommendations} />
+                        <ul className="list-disc pl-5 space-y-2">
+                          {selectedAssessmentDetails.recommendations.weak_areas.map((area, index) => (
+                            <li key={index} className="text-sm text-gray-700 bg-gray-50 p-2 rounded">
+                              <strong>{area.topic}:</strong> Performance {area.performance}%, Suggestion: {area.suggestion}
+                            </li>
+                          ))}
+                        </ul>
                       ) : (
                         <p className="text-gray-500 text-center py-2">No specific weak areas identified.</p>
                       )}
@@ -180,17 +241,17 @@ const StudentAnalytics = () => {
                       {selectedAssessmentDetails.recommendations.study_plan ? (
                         <div className="mt-2">
                           <h5 className="text-sm font-medium text-gray-600">Daily Practice <FaClock className="inline ml-1" /></h5>
-                          <ul className="list-disc pl-5">
+                          <ul className="list-disc pl-5 space-y-2">
                             {selectedAssessmentDetails.recommendations.study_plan.daily_practice.map((item, index) => (
-                              <li key={index} className="text-sm text-gray-700">
+                              <li key={index} className="text-sm text-gray-700 bg-gray-50 p-2 rounded">
                                 {item.topic}: {item.focus} ({item.time_allocation || 'N/A'})
                               </li>
                             ))}
                           </ul>
                           <h5 className="text-sm font-medium text-gray-600 mt-2">Weekly Review <FaChartLine className="inline ml-1" /></h5>
-                          <ul className="list-disc pl-5">
+                          <ul className="list-disc pl-5 space-y-2">
                             {selectedAssessmentDetails.recommendations.study_plan.weekly_review.map((item, index) => (
-                              <li key={index} className="text-sm text-gray-700">
+                              <li key={index} className="text-sm text-gray-700 bg-gray-50 p-2 rounded">
                                 {item.topic}: {item.activity} - {item.goal || 'N/A'}
                               </li>
                             ))}
@@ -214,6 +275,37 @@ const StudentAnalytics = () => {
                   <FaBook className="mr-2" /> Download Assessment Report
                 </button>
               </div>
+            </div>
+          )}
+
+          {selectedAssessment && showType === 'questions' && (
+            <div className="mt-8 space-y-6">
+              <Card className="shadow-lg bg-white rounded-xl">
+                <CardHeader className="bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-t-xl">
+                  <h3 className="text-lg font-semibold">Questions and Answers</h3>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {questionsLoading ? (
+                      <p className="text-gray-500 text-center py-4">Loading questions...</p>
+                    ) : questionsData.length > 0 ? (
+                      questionsData.map((q, index) => (
+                        <div key={index} className="border p-2 rounded">
+                          <p><strong>Question {q.question_order || (index + 1)} ({q.type}):</strong> {q.question}</p>
+                          <p><strong>Options:</strong> {q.options ? JSON.stringify(q.options) : 'N/A'}</p>
+                          <p><strong>Correct Answer:</strong> {q.correct_answer}</p>
+                          <p><strong>Your Answer:</strong> {q.student_answer || 'N/A'}</p>
+                          <p><strong>Score:</strong> {q.score < 0 ? `-${Math.abs(q.score)}` : q.score}/{q.max_marks}</p>
+                          <p><strong>Correct?</strong> {q.is_correct ? 'Yes' : 'No'}</p>
+                          <p><strong>Negative Marks:</strong> {q.negative_marks ? `-${q.negative_marks}` : 0}</p>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-gray-500 text-center py-4">No questions available.</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           )}
         </div>
