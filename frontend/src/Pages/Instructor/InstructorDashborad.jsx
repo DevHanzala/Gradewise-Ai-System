@@ -197,14 +197,17 @@ function InstructorDashboard() {
                             <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                               {new Date(assessment.created_at).toLocaleDateString()}
                             </td>
-                            <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                            <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6 space-x-2">
+                              {/* View - Always Show */}
                               <Link
                                 to={`/instructor/assessments/${assessment.id}`}
-                                className="text-blue-600 hover:text-blue-900 mr-4"
+                                className="text-blue-600 hover:text-blue-900"
                                 onClick={() => console.log(`🔗 Navigating to assessment ID: ${assessment.id}`)}
                               >
                                 View
                               </Link>
+
+                              {/* Enroll - Always Show */}
                               <Link
                                 to={`/instructor/assessments/${assessment.id}/enroll`}
                                 className="text-green-600 hover:text-green-900"
@@ -212,6 +215,46 @@ function InstructorDashboard() {
                               >
                                 Enroll
                               </Link>
+
+                              {/* Edit - Hide if executed */}
+                              {!assessment.is_executed && (
+                                <Link
+                                  to={`/instructor/assessments/${assessment.id}/edit`}
+                                  className="text-yellow-600 hover:text-yellow-900"
+                                  onClick={() => console.log(`🔗 Navigating to edit for assessment ID: ${assessment.id}`)}
+                                >
+                                  Edit
+                                </Link>
+                              )}
+
+                              {/* Delete - Hide if executed */}
+                              {!assessment.is_executed && (
+                                <button
+                                  onClick={() => {
+                                    if (window.confirm(`Are you sure you want to delete "${assessment.title}"?`)) {
+                                      useAssessmentStore.getState().deleteAssessment(assessment.id).then(() => {
+                                        showModal("success", "Success", "Assessment deleted successfully");
+                                      }).catch((err) => {
+                                        showModal("error", "Error", err.message || "Failed to delete assessment");
+                                      });
+                                    }
+                                  }}
+                                  className="text-red-600 hover:text-red-900"
+                                >
+                                  Delete
+                                </button>
+                              )}
+
+                              {/* Analytics - Show only if executed */}
+                              {assessment.is_executed && (
+                                <Link
+                                  to={`/instructor/assessments/${assessment.id}/analytics`}
+                                  className="text-indigo-600 hover:text-indigo-900"
+                                  onClick={() => console.log(`🔗 Navigating to analytics for assessment ID: ${assessment.id}`)}
+                                >
+                                  Analytics
+                                </Link>
+                              )}
                             </td>
                           </tr>
                         ))}

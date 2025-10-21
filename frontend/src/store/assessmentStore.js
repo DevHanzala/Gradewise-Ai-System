@@ -41,7 +41,11 @@ const useAssessmentStore = create((set) => ({
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.data.success) {
-        set({ assessments: response.data.data, loading: false });
+        // Assuming the API returns an `is_executed` field or similar to indicate execution status
+        set({ assessments: response.data.data.map(assessment => ({
+          ...assessment,
+          is_executed: assessment.is_executed || false // Default to false if not present
+        })), loading: false });
       } else {
         set({ error: response.data.message, loading: false });
       }
@@ -132,7 +136,7 @@ const useAssessmentStore = create((set) => ({
 
       if (response.data.success) {
         set((state) => ({
-          assessments: [...state.assessments, response.data.data],
+          assessments: [...state.assessments, { ...response.data.data, is_executed: false }],
           loading: false,
         }));
         return response.data.data;
@@ -200,7 +204,7 @@ const useAssessmentStore = create((set) => ({
       if (response.data.success) {
         set((state) => ({
           assessments: state.assessments.map((assessment) =>
-            assessment.id === assessmentId ? response.data.data : assessment
+            assessment.id === assessmentId ? { ...response.data.data, is_executed: assessment.is_executed } : assessment
           ),
           currentAssessment: response.data.data,
           loading: false,
