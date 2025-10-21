@@ -1,4 +1,3 @@
-// controllers/studentAnalyticsController.js
 import {
   getStudentAnalytics,
   getPerformanceOverTime,
@@ -210,10 +209,14 @@ export const getStudentReport = async (req, res) => {
         assessment_id: assessmentId,
         generated_at: new Date().toISOString(),
         score: details.score,
+        total_marks: details.total_marks,
+        student_score: details.student_score,
         weak_areas: details.weak_areas,
         recommendations: details.recommendations,
         summary: {
           score: details.score,
+          total_marks: details.total_marks,
+          student_score: details.student_score,
           improvement_areas: details.weak_areas.length
         }
       };
@@ -231,7 +234,7 @@ export const getStudentReport = async (req, res) => {
         performance_trend: performance,
         recommendations: recommendations,
         summary: {
-          total_assessments_completed: analytics.total_assessments,
+          total_assessments_completed: analytics.completed_assessments,
           average_performance: analytics.average_score,
           improvement_areas: recommendations.weak_areas.length,
           strengths_count: analytics.strengths.length
@@ -281,6 +284,8 @@ const convertToCSV = (report, isSpecificAssessment = false) => {
     rows.push(['Weaknesses', report.overview.weaknesses.length, 'Number of areas needing improvement']);
   } else {
     rows.push(['Score', `${report.score}%`, 'Performance score for this assessment']);
+    rows.push(['Total Marks', `${report.total_marks}`, 'Maximum possible score for this assessment']);
+    rows.push(['Student Score', `${report.student_score}`, 'Actual score achieved']);
   }
 
   rows.push(['Improvement Areas', report.summary.improvement_areas, 'Number of areas with recommendations']);

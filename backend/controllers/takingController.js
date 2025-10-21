@@ -103,7 +103,7 @@ export const startAssessmentForStudent = async (req, res) => {
 
     // Fetch generated questions (options is already JSONB, no need for JSON.parse)
     const { rows: questionRows } = await db.query(
-      `SELECT id, question_type, question_text, options, correct_answer, marks, duration_per_question, positive_marks, negative_marks
+      `SELECT id, question_type, question_text, options, correct_answer, positive_marks, negative_marks, duration_per_question
        FROM generated_questions WHERE attempt_id = $1 ORDER BY question_order`,
       [attemptId]
     );
@@ -142,59 +142,55 @@ export const submitAssessmentForStudent = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid attempt or assessment not in progress" });
     }
 
-    // Fetch question blocks for marks
-    const { rows: blockRows } = await db.query(
-      `SELECT question_type, positive_marks, negative_marks
-       FROM question_blocks WHERE assessment_id = $1`,
-      [assessmentId]
-    );
-
-    // Fetch questions with correct answers and marks
+    // Fetch all questions for the attempt to ensure all are evaluated
     const { rows: questionRows } = await db.query(
       `SELECT id, question_type, correct_answer, positive_marks, negative_marks
-       FROM generated_questions WHERE attempt_id = $1`,
+       FROM generated_questions WHERE attempt_id = $1 ORDER BY question_order`,
       [attemptId]
     );
 
     let totalScore = 0;
-    const evaluatedAnswers = await Promise.all(
-      answers.map(async (ans) => {
-        const q = questionRows.find((q) => q.id === ans.questionId);
-        if (!q) {
-          console.warn(`⚠️ Question ${ans.questionId} not found for attempt ${attemptId}`);
-          return { questionId: ans.questionId, answer: ans.answer, score: 0, correct: false };
-        }
+    const evaluatedAnswers = [];
 
-        let isCorrect;
-        if (q.question_type === "short_answer") {
-          const checkingModel = await getCheckingModel();
-          const langName = mapLanguageCode(language);
-          const prompt = `In ${langName}, evaluate if the student's answer "${ans.answer}" matches the correct answer "${q.correct_answer}" for a short-answer question. Return "true" if they are equivalent (ignoring case and minor phrasing differences), "false" otherwise.`;
-          const response = await generateContent(checkingModel, prompt);
-          isCorrect = response.trim().toLowerCase() === "true";
-        } else {
-          isCorrect = checkAnswer(q.question_type, ans.answer, q.correct_answer);
-        }
+    // Process all questions, including unanswered ones
+    for (const q of questionRows) {
+      const submittedAnswer = answers.find((a) => a.questionId === q.id);
+      const studentAnswer = submittedAnswer ? submittedAnswer.answer : null;
+      let isCorrect;
 
-        const score = isCorrect ? parseFloat(q.positive_marks || 1) : -parseFloat(q.negative_marks || 0);
-        totalScore += score;
+      if (q.question_type === "short_answer") {
+        const checkingModel = await getCheckingModel();
+        const langName = mapLanguageCode(language);
+        const prompt = `In ${langName}, evaluate if the student's answer "${studentAnswer || ''}" matches the correct answer "${q.correct_answer}" for a short-answer question. Return "true" if they are equivalent (ignoring case and minor phrasing differences), "false" otherwise.`;
+        const response = await generateContent(checkingModel, prompt);
+        isCorrect = response.trim().toLowerCase() === "true";
+      } else {
+        isCorrect = checkAnswer(q.question_type, studentAnswer, q.correct_answer);
+      }
 
-        // Store answer
-        await db.query(
-          `INSERT INTO student_answers (attempt_id, question_id, student_answer)
-           VALUES ($1, $2, $3)`,
-          [attemptId, ans.questionId, JSON.stringify(ans.answer)]
-        );
+      const score = isCorrect ? parseFloat(q.positive_marks) : (studentAnswer !== null ? -parseFloat(q.negative_marks) : 0);
+      totalScore += score;
 
-        return {
-          questionId: ans.questionId,
-          answer: ans.answer,
-          correctAnswer: q.correct_answer,
-          score,
-          correct: isCorrect,
-        };
-      })
-    );
+      evaluatedAnswers.push({
+        questionId: q.id,
+        answer: studentAnswer,
+        correctAnswer: q.correct_answer,
+        score: score,
+        correct: isCorrect,
+      });
+
+      // Store answer in student_answers
+      await db.query(
+        `INSERT INTO student_answers (attempt_id, question_id, student_answer, score)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (attempt_id, question_id) DO UPDATE
+         SET student_answer = EXCLUDED.student_answer, score = EXCLUDED.score`,
+        [attemptId, q.id, JSON.stringify(studentAnswer), score]
+      );
+    }
+
+    // Clamp score to 0 if negative (optional based on your preference)
+    totalScore = Math.max(0, totalScore);
 
     // Update attempt status and score
     await db.query(
@@ -206,7 +202,7 @@ export const submitAssessmentForStudent = async (req, res) => {
     console.log(`✅ Assessment ${assessmentId} submitted, attempt ${attemptId}, score: ${totalScore}`);
 
     res.status(200).json({
-      success: true,
+      success: false,
       message: "Assessment submitted successfully",
       data: { attemptId, score: totalScore, answers: evaluatedAnswers },
     });

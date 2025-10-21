@@ -5,12 +5,12 @@ import LoadingSpinner from "../../../components/ui/LoadingSpinner";
 import Navbar from "../../../components/Navbar";
 import Footer from "../../../components/Footer";
 import useInstructorAnalyticsStore from "../../../store/useInstructorAssessmentAnalyticsStore";
-import { FaList, FaTable, FaUser, FaCalendarAlt, FaPercentage, FaClock, FaCheckCircle } from "react-icons/fa";
+import { FaList, FaTable, FaUser, FaCalendarAlt, FaPercentage, FaClock, FaCheckCircle, FaEye } from "react-icons/fa";
 
 function AssessmentAnalytics() {
   const { assessmentId } = useParams();
   const navigate = useNavigate();
-  const { loading, error, assessments, students, fetchAssessments, fetchAssessmentStudents } = useInstructorAnalyticsStore();
+  const { loading, error, assessments, students, fetchAssessments, fetchAssessmentStudents, fetchStudentQuestions, studentQuestions, selectedStudentId } = useInstructorAnalyticsStore();
   const [selectedAssessment, setSelectedAssessment] = useState(null);
 
   useEffect(() => {
@@ -30,7 +30,7 @@ function AssessmentAnalytics() {
     }
   }, [assessmentId, fetchAssessmentStudents, assessments]);
 
-  console.log("🌐 Rendering with:", { assessmentId, assessments, students, loading, error });
+  console.log("🌐 Rendering with:", { assessmentId, assessments, students, studentQuestions, loading, error });
 
   if (loading) {
     return (
@@ -134,6 +134,9 @@ function AssessmentAnalytics() {
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                               <FaCheckCircle className="mr-2 inline" /> Status
                             </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Actions
+                            </th>
                           </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
@@ -148,6 +151,14 @@ function AssessmentAnalytics() {
                               <td className="px-6 py-4 whitespace-nowrap">{student.percentage}%</td>
                               <td className="px-6 py-4 whitespace-nowrap">{student.time_used}</td>
                               <td className="px-6 py-4 whitespace-nowrap">{student.status || "N/A"}</td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <button
+                                  onClick={() => fetchStudentQuestions(assessmentId, student.student_id)}
+                                  className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center justify-center"
+                                >
+                                  <FaEye className="mr-1" /> View Questions
+                                </button>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -158,6 +169,40 @@ function AssessmentAnalytics() {
                   )}
                 </CardContent>
               </Card>
+
+              {selectedStudentId && studentQuestions.length > 0 && (
+                <Card className="shadow-lg bg-white rounded-xl">
+                  <CardHeader className="bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-t-xl">
+                    <h3 className="text-lg font-semibold flex items-center">
+                      <FaTable className="mr-2" /> Student Questions and Answers
+                    </h3>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {studentQuestions.map((q, index) => (
+                        <div key={index} className="border p-4 rounded-lg">
+                          <p className="font-medium text-gray-900">Question {q.question_order || (index + 1)} ({q.question_type}):</p>
+                          <p className="text-gray-700">{q.question_text}</p>
+                          <p className="font-medium text-gray-900 mt-2">Options:</p>
+                          <p className="text-gray-700">{q.options ? JSON.stringify(q.options) : 'N/A'}</p>
+                          <p className="font-medium text-gray-900 mt-2">Correct Answer:</p>
+                          <p className="text-gray-700">{q.correct_answer}</p>
+                          <p className="font-medium text-gray-900 mt-2">Student Answer:</p>
+                          <p className="text-gray-700">{q.student_answer || 'N/A'}</p>
+                          <p className="font-medium text-gray-900 mt-2">Score:</p>
+                          <p className="text-gray-700">{q.score}</p>
+                          <p className="font-medium text-gray-900 mt-2">Is Correct:</p>
+                          <p className="text-gray-700">{q.is_correct ? 'Yes' : 'No'}</p>
+                          <p className="font-medium text-gray-900 mt-2">Positive Marks:</p>
+                          <p className="text-gray-700">{q.positive_marks}</p>
+                          <p className="font-medium text-gray-900 mt-2">Negative Marks:</p>
+                          <p className="text-gray-700">{q.negative_marks}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           )}
         </div>

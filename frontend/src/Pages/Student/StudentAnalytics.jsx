@@ -1,4 +1,3 @@
-// frontend/src/Pages/Student/StudentAnalytics.jsx
 import { useState, useEffect } from "react";
 import { Card, CardHeader, CardContent } from "../../components/ui/Card";
 import LoadingSpinner from "../../components/ui/LoadingSpinner";
@@ -6,7 +5,6 @@ import Navbar from "../../components/Navbar";
 import Footer from "../../components/Footer";
 import toast from "react-hot-toast";
 import useStudentAnalyticsStore from "../../store/useStudentAnalyticsStore.js";
-import Recommendations from "../../components/Recommendations.jsx";
 import { FaCheck, FaTimes, FaClock, FaBook, FaChartLine, FaEye } from "react-icons/fa";
 import axios from "axios";
 
@@ -86,7 +84,7 @@ const StudentAnalytics = () => {
   if (error) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
-        <p className="text-red-500 text-lg">Error loading analytics: {error.message}</p>
+        <p className="text-red-500 text-lg">Error loading analytics: {error}</p>
       </div>
     );
   }
@@ -202,7 +200,7 @@ const StudentAnalytics = () => {
                     </div>
                     <div className="flex items-center">
                       <FaCheck className="text-green-500 mr-2" />
-                      <p className="text-sm font-medium text-gray-600">Student Score</p>
+                      <p className="text-sm font-medium text-gray-600">Obtained Marks</p>
                       <p className="text-lg font-medium text-gray-900 ml-2">
                         {selectedAssessmentDetails.student_score || 0}
                       </p>
@@ -285,19 +283,52 @@ const StudentAnalytics = () => {
                   <h3 className="text-lg font-semibold">Questions and Answers</h3>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
+                  <div className="space-y-6">
                     {questionsLoading ? (
                       <p className="text-gray-500 text-center py-4">Loading questions...</p>
                     ) : questionsData.length > 0 ? (
                       questionsData.map((q, index) => (
-                        <div key={index} className="border p-2 rounded">
-                          <p><strong>Question {q.question_order || (index + 1)} ({q.type}):</strong> {q.question}</p>
-                          <p><strong>Options:</strong> {q.options ? JSON.stringify(q.options) : 'N/A'}</p>
-                          <p><strong>Correct Answer:</strong> {q.correct_answer}</p>
-                          <p><strong>Your Answer:</strong> {q.student_answer || 'N/A'}</p>
-                          <p><strong>Score:</strong> {q.score < 0 ? `-${Math.abs(q.score)}` : q.score}/{q.max_marks}</p>
-                          <p><strong>Correct?</strong> {q.is_correct ? 'Yes' : 'No'}</p>
-                          <p><strong>Negative Marks:</strong> {q.negative_marks ? `-${q.negative_marks}` : 0}</p>
+                        <div key={index} className="border border-gray-200 p-6 rounded-xl bg-gradient-to-br from-white to-gray-50 shadow-md hover:shadow-lg transition-all duration-300">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="p-4 bg-white rounded-lg">
+                              <p className="text-xl font-semibold text-gray-800 mb-2">Question {q.question_order || (index + 1)} ({q.type})</p>
+                              <p className="text-gray-700 leading-relaxed">{q.question}</p>
+                            </div>
+                            <div className="p-4 bg-white rounded-lg">
+                              <p className="text-lg font-medium text-gray-800 mb-2">Options</p>
+                              <p className="text-gray-600 leading-relaxed">
+                                {q.options ? (
+                                  <ul className="list-disc list-inside space-y-1">
+                                    {Object.entries(q.options).map(([key, value]) => (
+                                      <li key={key} className="text-gray-700">{`${key}: ${value}`}</li>
+                                    ))}
+                                  </ul>
+                                ) : <span className="text-gray-500 italic">N/A</span>}
+                              </p>
+                            </div>
+                            <div className="p-4 bg-white rounded-lg">
+                              <p className="text-lg font-medium text-gray-800 mb-2">Correct Answer</p>
+                              <p className="text-green-600 font-medium leading-relaxed">{q.correct_answer || 'N/A'}</p>
+                            </div>
+                            <div className="p-4 bg-white rounded-lg">
+                              <p className="text-lg font-medium text-gray-800 mb-2">Your Answer</p>
+                              <p className="text-blue-600 font-medium leading-relaxed">{q.student_answer || 'N/A'}</p>
+                            </div>
+                            <div className="p-4 bg-white rounded-lg">
+                              <p className="text-lg font-medium text-gray-800 mb-2">Score</p>
+                              <p className="text-purple-600 font-medium leading-relaxed">
+                                {q.score < 0 ? `-${Math.abs(q.score)}` : q.score}/{q.max_marks}
+                              </p>
+                            </div>
+                            <div className="p-4 bg-white rounded-lg">
+                              <p className="text-lg font-medium text-gray-800 mb-2">Correct?</p>
+                              <p className="text-gray-700 leading-relaxed">{q.is_correct ? 'Yes' : 'No'}</p>
+                            </div>
+                            <div className="p-4 bg-white rounded-lg">
+                              <p className="text-lg font-medium text-gray-800 mb-2">Negative Marks</p>
+                              <p className="text-red-600 font-medium leading-relaxed">{q.negative_marks ? `-${q.negative_marks}` : 0}</p>
+                            </div>
+                          </div>
                         </div>
                       ))
                     ) : (

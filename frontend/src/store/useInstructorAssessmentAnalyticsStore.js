@@ -9,9 +9,11 @@ const useInstructorAnalyticsStore = create((set, get) => ({
   assessments: [],
   students: [],
   selectedAssessmentId: null,
+  selectedStudentId: null,
+  studentQuestions: [],
 
   fetchAssessments: async () => {
-    set({ loading: true, error: null, students: [], selectedAssessmentId: null });
+    set({ loading: true, error: null, students: [], selectedAssessmentId: null, selectedStudentId: null, studentQuestions: [] });
     try {
       const token = localStorage.getItem("token");
       if (!token) throw new Error("No authentication token found");
@@ -34,7 +36,7 @@ const useInstructorAnalyticsStore = create((set, get) => ({
   },
 
   fetchAssessmentStudents: async (assessmentId) => {
-    set({ loading: true, error: null, students: [] });
+    set({ loading: true, error: null, students: [], selectedStudentId: null, studentQuestions: [] });
     try {
       const token = localStorage.getItem("token");
       if (!token) throw new Error("No authentication token found");
@@ -51,6 +53,29 @@ const useInstructorAnalyticsStore = create((set, get) => ({
     } catch (error) {
       console.error(`❌ Error fetching students:`, error);
       set({ error: error.message || "Failed to fetch students" });
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  fetchStudentQuestions: async (assessmentId, studentId) => {
+    set({ loading: true, error: null, studentQuestions: [] });
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) throw new Error("No authentication token found");
+      console.log(`🔍 Fetching questions for student ${studentId} in assessment ${assessmentId}`);
+      const response = await axios.get(`${API_URL}/instructor-analytics/assessment/${assessmentId}/student/${studentId}/questions`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      console.log(`📦 Student questions response received:`, response.data);
+      if (response.data.success) {
+        set({ studentQuestions: response.data.data || [], selectedStudentId: studentId });
+      } else {
+        throw new Error(response.data.message || "Failed to fetch student questions");
+      }
+    } catch (error) {
+      console.error(`❌ Error fetching student questions:`, error);
+      set({ error: error.message || "Failed to fetch student questions" });
     } finally {
       set({ loading: false });
     }

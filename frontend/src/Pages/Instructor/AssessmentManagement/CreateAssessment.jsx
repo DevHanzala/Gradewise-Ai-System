@@ -27,16 +27,13 @@ function CreateAssessment() {
       question_count: 1,
       duration_per_question: 120,
       num_options: 4,
-      num_first_side: null,
-      num_second_side: null,
-      positive_marks: null,
-      negative_marks: null,
+      positive_marks: 1,
+      negative_marks: 0,
     },
   ]);
 
   const [selectedResources, setSelectedResources] = useState([]);
   const [newFiles, setNewFiles] = useState([]);
-  const [resourceMode, setResourceMode] = useState("upload");
 
   useEffect(() => {
     fetchAllResources();
@@ -57,15 +54,13 @@ function CreateAssessment() {
           ? {
               ...block,
               [field]:
-                field === "question_count" ||
-                field === "duration_per_question" ||
-                field === "num_options" ||
-                field === "num_first_side" ||
-                field === "num_second_side"
-                  ? Number.parseInt(value) || null
-                  : value === "" || value === null
-                  ? null
-                  : Number.parseFloat(value) || null,
+                field === "question_count" || field === "duration_per_question" || field === "num_options"
+                  ? Math.max(Number.parseInt(value) || 1, 1) // Ensure minimum 1 for counts/options
+                  : field === "positive_marks" || field === "negative_marks"
+                  ? value === "" || value === null
+                    ? null
+                    : Math.max(Number.parseFloat(value) || 0, 0) // Ensure non-negative marks
+                  : value,
             }
           : block
       )
@@ -80,10 +75,8 @@ function CreateAssessment() {
         question_count: 1,
         duration_per_question: 120,
         num_options: 4,
-        num_first_side: null,
-        num_second_side: null,
-        positive_marks: null,
-        negative_marks: null,
+        positive_marks: 1,
+        negative_marks: 0,
       },
     ]);
   };
@@ -126,31 +119,29 @@ function CreateAssessment() {
   };
 
   const validateForm = () => {
-    if (!formData.title.trim()) {
-      return "Assessment title is required";
+    if (!formData.prompt || !formData.prompt.trim()) {
+      return "Prompt is required and must be a non-empty string";
     }
-    if (!selectedResources.length && !newFiles.length && !formData.externalLinks.some((link) => link.trim())) {
-      return "At least one resource or external link is required";
+
+    if (formData.title && (!formData.title.trim() || typeof formData.title !== 'string')) {
+      return "Title must be a non-empty string if provided";
     }
-    for (const block of questionBlocks) {
-      if (!block.question_count || block.question_count < 1) {
-        return "Question count must be at least 1 for each block";
-      }
-      if (!block.duration_per_question || block.duration_per_question < 30) {
-        return "Duration per question must be at least 30 seconds for each block";
-      }
-      if (block.question_type === "multiple_choice" && (!block.num_options || block.num_options < 2)) {
-        return "Multiple choice questions must have at least 2 options";
-      }
-      if (block.question_type === "matching") {
-        if (!block.num_first_side || block.num_first_side < 2) {
-          return "Matching questions must have at least 2 first-side options";
+
+    // Validate question_blocks if provided
+    if (questionBlocks && Array.isArray(questionBlocks) && questionBlocks.length > 0) {
+      for (const block of questionBlocks) {
+        if (!block.question_count || block.question_count < 1) {
+          return "Question count must be at least 1 for each block";
         }
-        if (!block.num_second_side || block.num_second_side < 2) {
-          return "Matching questions must have at least 2 second-side options";
+        if (!block.duration_per_question || block.duration_per_question < 30) {
+          return "Duration per question must be at least 30 seconds";
+        }
+        if (block.question_type === "multiple_choice" && (!block.num_options || block.num_options < 2)) {
+          return "Multiple choice questions must have at least 2 options";
         }
       }
     }
+
     return null;
   };
 
@@ -167,33 +158,28 @@ function CreateAssessment() {
       return;
     }
 
-    const assessmentData = {
-      title: formData.title,
-      prompt: formData.prompt || null,
-      externalLinks: formData.externalLinks.filter((link) => link.trim()),
-      question_blocks: questionBlocks.map((block) => ({
-        question_type: block.question_type,
-        question_count: block.question_count,
-        duration_per_question: block.duration_per_question,
-        num_options: block.question_type === "multiple_choice" ? block.num_options : null,
-        num_first_side: block.question_type === "matching" ? block.num_first_side : null,
-        num_second_side: block.question_type === "matching" ? block.num_second_side : null,
-        positive_marks: block.positive_marks === "" || block.positive_marks === null ? null : Number.parseFloat(block.positive_marks),
-        negative_marks: block.negative_marks === "" || block.negative_marks === null ? null : Number.parseFloat(block.negative_marks),
-      })),
-      selected_resources: selectedResources.length > 0 ? selectedResources : [],
-    };
-
-    const formDataToSend = new FormData();
-    formDataToSend.append("title", assessmentData.title); // Send as string, not JSON
-    formDataToSend.append("prompt", assessmentData.prompt); // Send as string or null
-    formDataToSend.append("externalLinks", JSON.stringify(assessmentData.externalLinks));
-    formDataToSend.append("question_blocks", JSON.stringify(assessmentData.question_blocks));
-    formDataToSend.append("selected_resources", JSON.stringify(assessmentData.selected_resources));
-    newFiles.forEach((file) => formDataToSend.append("new_files", file));
+    const assessmentData = new FormData();
+    assessmentData.append("title", formData.title ? formData.title.trim() : null);
+    assessmentData.append("prompt", formData.prompt.trim());
+    assessmentData.append("externalLinks", JSON.stringify(formData.externalLinks.filter((link) => link.trim())));
+    assessmentData.append(
+      "question_blocks",
+      JSON.stringify(
+        questionBlocks.map((block) => ({
+          question_type: block.question_type,
+          question_count: block.question_count,
+          duration_per_question: block.duration_per_question,
+          num_options: block.question_type === "multiple_choice" ? block.num_options : null,
+          positive_marks: block.positive_marks || 1,
+          negative_marks: block.negative_marks || 0,
+        }))
+      )
+    );
+    assessmentData.append("selected_resources", JSON.stringify(selectedResources));
+    newFiles.forEach((file) => assessmentData.append("new_files", file));
 
     try {
-      await createAssessment(formDataToSend);
+      await createAssessment(assessmentData);
       setModal({
         isOpen: true,
         type: "success",
@@ -229,7 +215,7 @@ function CreateAssessment() {
               <div className="space-y-6">
                 <div>
                   <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-2">
-                    Assessment Title
+                    Assessment Title (Optional)
                   </label>
                   <input
                     type="text"
@@ -238,13 +224,13 @@ function CreateAssessment() {
                     value={formData.title}
                     onChange={handleInputChange}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
+                    placeholder="Enter assessment title (optional)"
                   />
                 </div>
 
                 <div>
                   <label htmlFor="prompt" className="block text-sm font-medium text-gray-700 mb-2">
-                    Additional Info (Optional)
+                    Prompt
                   </label>
                   <textarea
                     name="prompt"
@@ -253,33 +239,17 @@ function CreateAssessment() {
                     onChange={handleInputChange}
                     rows={4}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Provide additional context or instructions for the AI to generate questions (optional)"
+                    placeholder="Provide a detailed prompt for question generation"
+                    required
                   />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Resources</label>
-                  <div className="flex space-x-4 mb-4">
-                    <button
-                      type="button"
-                      onClick={() => setResourceMode("upload")}
-                      className={`px-4 py-2 rounded-md ${resourceMode === "upload" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700"}`}
-                    >
-                      Upload New Files
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setResourceMode("select")}
-                      className={`px-4 py-2 rounded-md ${resourceMode === "select" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700"}`}
-                    >
-                      Select Existing Resources
-                    </button>
-                  </div>
-
-                  {resourceMode === "upload" ? (
+                  <div className="flex flex-col space-y-4">
                     <div>
                       <label htmlFor="new_files" className="block text-sm font-medium text-gray-700 mb-2">
-                        Upload Files
+                        Upload Files (Optional)
                       </label>
                       <input
                         type="file"
@@ -299,9 +269,8 @@ function CreateAssessment() {
                         </ul>
                       )}
                     </div>
-                  ) : (
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Select Resources</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Select Existing Resources (Optional)</label>
                       {resourcesLoading ? (
                         <LoadingSpinner size="sm" />
                       ) : resources.length > 0 ? (
@@ -325,11 +294,11 @@ function CreateAssessment() {
                         <p className="text-gray-500">No resources available</p>
                       )}
                     </div>
-                  )}
+                  </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">External Links</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">External Links (Optional)</label>
                   {formData.externalLinks.map((link, index) => (
                     <div key={index} className="flex items-center space-x-2 mb-2">
                       <input
@@ -364,7 +333,7 @@ function CreateAssessment() {
 
           <Card className="mb-6">
             <CardHeader>
-              <h2 className="text-xl font-semibold text-gray-900">Question Blocks</h2>
+              <h2 className="text-xl font-semibold text-gray-900">Question Blocks (Optional)</h2>
             </CardHeader>
             <CardContent>
               {questionBlocks.map((block, index) => (
@@ -386,18 +355,12 @@ function CreateAssessment() {
                       <label className="block text-sm font-medium text-gray-700 mb-2">Question Type</label>
                       <select
                         value={block.question_type}
-                        onChange={(e) => {
-                          handleBlockChange(index, "question_type", e.target.value);
-                          handleBlockChange(index, "num_options", e.target.value === "multiple_choice" ? 4 : null);
-                          handleBlockChange(index, "num_first_side", e.target.value === "matching" ? 4 : null);
-                          handleBlockChange(index, "num_second_side", e.target.value === "matching" ? 4 : null);
-                        }}
+                        onChange={(e) => handleBlockChange(index, "question_type", e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
-                        <option value="multiple_choice">MCQs</option>
+                        <option value="multiple_choice">Multiple Choice</option>
                         <option value="short_answer">Short Answer</option>
                         <option value="true_false">True/False</option>
-                        <option value="matching">Match the Columns</option>
                       </select>
                     </div>
 
@@ -439,53 +402,26 @@ function CreateAssessment() {
                       </div>
                     )}
 
-                    {block.question_type === "matching" && (
-                      <>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">First Side Options</label>
-                          <input
-                            type="number"
-                            value={block.num_first_side}
-                            onChange={(e) => handleBlockChange(index, "num_first_side", e.target.value)}
-                            min="2"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            required
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Second Side Options</label>
-                          <input
-                            type="number"
-                            value={block.num_second_side}
-                            onChange={(e) => handleBlockChange(index, "num_second_side", e.target.value)}
-                            min="2"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            required
-                          />
-                        </div>
-                      </>
-                    )}
-
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Positive Marks (Optional)</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Positive Marks</label>
                       <input
                         type="number"
                         value={block.positive_marks || ""}
                         onChange={(e) => handleBlockChange(index, "positive_marks", e.target.value)}
                         min="0"
-                        step="any"
+                        step="0.1"
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Negative Marks (Optional)</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Negative Marks</label>
                       <input
                         type="number"
                         value={block.negative_marks || ""}
                         onChange={(e) => handleBlockChange(index, "negative_marks", e.target.value)}
                         min="0"
-                        step="any"
+                        step="0.1"
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>

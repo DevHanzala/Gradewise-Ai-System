@@ -1,7 +1,8 @@
 import express from "express";
 import {
   getInstructorExecutedAssessments,
-  getAssessmentStudents
+  getAssessmentStudents,
+  getStudentAttemptQuestions
 } from "../controllers/InstructorAssessmentAnalyticsController.js";
 import { protect } from "../middleware/authMiddleware.js";
 
@@ -20,5 +21,12 @@ router.get("/assessments", protect, getInstructorExecutedAssessments);
  * @access Private (Instructor)
  */
 router.get("/assessment/:id/students", protect, getAssessmentStudents);
+
+/**
+ * @route GET /api/instructor-analytics/assessment/:id/student/:studentId/questions
+ * @desc Get a student's questions and answers for a specific assessment
+ * @access Private (Instructor)
+ */
+router.get("/assessment/:id/student/:studentId/questions", protect, getStudentAttemptQuestions);
 
 export default router;

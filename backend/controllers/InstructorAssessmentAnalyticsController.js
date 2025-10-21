@@ -1,8 +1,8 @@
 import {
   getInstructorExecutedAssessmentsModel,
-  getAssessmentStudentsModel
+  getAssessmentStudentsModel,
+  getStudentAttemptQuestionsModel
 } from "../models/InstructorAssessmentAnalyticsModel.js";
-import db from "../DB/db.js";
 
 /**
  * Instructor Assessment Analytics Controller
@@ -96,6 +96,58 @@ export const getAssessmentStudents = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch assessment students",
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get a student's questions and answers for a specific assessment
+ * @route GET /api/instructor-analytics/assessment/:id/student/:studentId/questions
+ */
+export const getStudentAttemptQuestions = async (req, res) => {
+  try {
+    const assessmentId = parseInt(req.params.id);
+    const studentId = parseInt(req.params.studentId);
+    const instructorId = req.user?.id;
+
+    if (!instructorId || req.user.role !== "instructor") {
+      return res.status(403).json({
+        success: false,
+        message: "Only instructors can access student data"
+      });
+    }
+
+    if (isNaN(assessmentId) || isNaN(studentId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid assessment ID or student ID"
+      });
+    }
+
+    console.log(`📋 Getting questions for student ${studentId} in assessment ${assessmentId}`);
+    const questions = await getStudentAttemptQuestionsModel(assessmentId, studentId, instructorId);
+
+    if (!questions || questions.length === 0) {
+      console.log(`ℹ️ No questions found for student ${studentId} in assessment ${assessmentId}`);
+      return res.status(200).json({
+        success: true,
+        message: "No questions found for this student in the assessment",
+        data: []
+      });
+    }
+
+    console.log(`✅ Retrieved ${questions.length} questions for student ${studentId} in assessment ${assessmentId}`);
+    res.status(200).json({
+      success: true,
+      message: "Student questions retrieved successfully",
+      data: questions
+    });
+  } catch (error) {
+    console.error("❌ Error fetching student attempt questions:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch student questions",
       error: error.message
     });
   }

@@ -1,4 +1,3 @@
-// models/studentAnalyticsModel.js
 import db from "../DB/db.js";
 import { getCreationModel, generateContent } from "../services/geminiService.js";
 
@@ -33,16 +32,27 @@ export const getStudentAnalytics = async (studentId) => {
         a.id,
         a.title,
         aa.completed_at AS submitted_at,
-        (SUM(sa.score) / SUM(gq.marks) * 100) AS percentage,
+        aa.score AS obtained_score,
+        (SELECT COALESCE(SUM(gq.positive_marks), 0)
+         FROM generated_questions gq
+         JOIN assessment_attempts aa2 ON gq.attempt_id = aa2.id
+         WHERE aa2.assessment_id = a.id AND aa2.id = aa.id) AS total_marks,
+        CASE WHEN (SELECT COALESCE(SUM(gq.positive_marks), 0)
+          FROM generated_questions gq
+          JOIN assessment_attempts aa2 ON gq.attempt_id = aa2.id
+          WHERE aa2.assessment_id = a.id AND aa2.id = aa.id) > 0
+          THEN ROUND((aa.score / (SELECT COALESCE(SUM(gq.positive_marks), 0)
+            FROM generated_questions gq
+            JOIN assessment_attempts aa2 ON gq.attempt_id = aa2.id
+            WHERE aa2.assessment_id = a.id AND aa2.id = aa.id) * 100)::numeric, 2)
+          ELSE 0 END AS percentage,
         EXTRACT(EPOCH FROM (aa.completed_at - aa.started_at)) AS time_taken
       FROM assessment_attempts aa
       JOIN assessments a ON aa.assessment_id = a.id
-      JOIN student_answers sa ON sa.attempt_id = aa.id
-      JOIN generated_questions gq ON sa.question_id = gq.id
       WHERE aa.student_id = $1 
         AND aa.completed_at IS NOT NULL
         AND aa.status = 'completed'
-      GROUP BY a.id, a.title, aa.completed_at, aa.started_at
+      GROUP BY a.id, a.title, aa.completed_at, aa.started_at, aa.id, aa.score
       ORDER BY aa.completed_at ASC
     `, [studentId]);
 
@@ -91,10 +101,10 @@ export const getStudentAnalytics = async (studentId) => {
       SELECT 
         gq.question_type,
         sa.score AS scored_marks,
-        gq.marks,
+        gq.positive_marks,
         CASE 
-          WHEN sa.score >= gq.marks * 0.8 THEN 'strength'
-          WHEN sa.score <= gq.marks * 0.6 THEN 'weakness'
+          WHEN sa.score >= gq.positive_marks * 0.8 THEN 'strength'
+          WHEN sa.score <= gq.positive_marks * 0.6 THEN 'weakness'
           ELSE 'average'
         END as performance_category
       FROM student_answers sa
@@ -129,7 +139,7 @@ export const getStudentAnalytics = async (studentId) => {
           question_type: questionType,
           difficulty: 'medium',
           score: q.scored_marks,
-          max_score: q.marks
+          max_score: q.positive_marks
         });
       } else if (q.performance_category === 'weakness') {
         weaknesses.push({
@@ -137,7 +147,7 @@ export const getStudentAnalytics = async (studentId) => {
           question_type: questionType,
           difficulty: 'medium',
           score: q.scored_marks,
-          max_score: q.marks
+          max_score: q.positive_marks
         });
       }
     });
@@ -211,18 +221,19 @@ export const getPerformanceOverTime = async (studentId, timeRange) => {
       FROM (
         SELECT 
           DATE(aa.completed_at) as date,
-          (SUM(sa.score) / SUM(gq.marks) * 100) as percentage,
+          (aa.score / (SELECT COALESCE(SUM(gq.positive_marks), 0)
+            FROM generated_questions gq
+            JOIN assessment_attempts aa2 ON gq.attempt_id = aa2.id
+            WHERE aa2.assessment_id = aa.assessment_id AND aa2.id = aa.id) * 100) as percentage,
           COUNT(DISTINCT aa.id) as assessments_taken,
           SUM(EXTRACT(EPOCH FROM (aa.completed_at - aa.started_at))) as total_time
         FROM assessment_attempts aa
         JOIN assessments a ON aa.assessment_id = a.id
-        JOIN student_answers sa ON sa.attempt_id = aa.id
-        JOIN generated_questions gq ON sa.question_id = gq.id
         WHERE aa.student_id = $1 
           AND aa.completed_at IS NOT NULL
           AND aa.status = 'completed'
           ${dateFilter}
-        GROUP BY aa.id, DATE(aa.completed_at)
+        GROUP BY aa.id, DATE(aa.completed_at), aa.assessment_id, aa.score
       ) as sub
       GROUP BY date, assessments_taken, total_time
       ORDER BY date ASC
@@ -247,16 +258,27 @@ export const getStudentAssessmentsList = async (studentId) => {
       SELECT 
         a.id,
         a.title,
-        (SUM(sa.score) / SUM(gq.marks) * 100) AS percentage,
+        aa.score AS obtained_score,
+        (SELECT COALESCE(SUM(gq.positive_marks), 0)
+         FROM generated_questions gq
+         JOIN assessment_attempts aa2 ON gq.attempt_id = aa2.id
+         WHERE aa2.assessment_id = a.id AND aa2.id = aa.id) AS total_marks,
+        CASE WHEN (SELECT COALESCE(SUM(gq.positive_marks), 0)
+          FROM generated_questions gq
+          JOIN assessment_attempts aa2 ON gq.attempt_id = aa2.id
+          WHERE aa2.assessment_id = a.id AND aa2.id = aa.id) > 0
+          THEN ROUND((aa.score / (SELECT COALESCE(SUM(gq.positive_marks), 0)
+            FROM generated_questions gq
+            JOIN assessment_attempts aa2 ON gq.attempt_id = aa2.id
+            WHERE aa2.assessment_id = a.id AND aa2.id = aa.id) * 100)::numeric, 2)
+          ELSE 0 END AS percentage,
         aa.completed_at AS date
       FROM assessment_attempts aa
       JOIN assessments a ON aa.assessment_id = a.id
-      JOIN student_answers sa ON sa.attempt_id = aa.id
-      JOIN generated_questions gq ON sa.question_id = gq.id
       WHERE aa.student_id = $1 
         AND aa.completed_at IS NOT NULL
         AND aa.status = 'completed'
-      GROUP BY a.id, a.title, aa.completed_at
+      GROUP BY a.id, a.title, aa.completed_at, aa.id, aa.score
       ORDER BY aa.completed_at DESC
     `;
     const result = await db.query(query, [studentId]);
@@ -282,14 +304,23 @@ export const getAssessmentAnalytics = async (studentId, assessmentId) => {
         a.title as assessment_title,
         a.created_at as assessment_created_at,
         aa.score as student_score,
-        aa.max_score,
-        aa.percentage
+        (SELECT COALESCE(SUM(gq.positive_marks), 0)
+         FROM generated_questions gq
+         WHERE gq.attempt_id = aa.id) AS total_marks,
+        CASE WHEN (SELECT COALESCE(SUM(gq.positive_marks), 0)
+          FROM generated_questions gq
+          WHERE gq.attempt_id = aa.id) > 0
+          THEN ROUND((aa.score / (SELECT COALESCE(SUM(gq.positive_marks), 0)
+            FROM generated_questions gq
+            WHERE gq.attempt_id = aa.id) * 100)::numeric, 2)
+          ELSE 0 END AS percentage
       FROM assessment_attempts aa
       JOIN assessments a ON aa.assessment_id = a.id
       WHERE aa.student_id = $1 
         AND aa.assessment_id = $2
         AND aa.completed_at IS NOT NULL
         AND aa.status = 'completed'
+      GROUP BY aa.id, a.title, a.created_at, aa.completed_at, aa.started_at, aa.score
       ORDER BY aa.completed_at DESC
       LIMIT 1
     `, [studentId, assessmentId]);
@@ -298,16 +329,7 @@ export const getAssessmentAnalytics = async (studentId, assessmentId) => {
       throw new Error('No completed attempt found for this assessment');
     }
 
-    const { attempt_id, time_taken, assessment_title, assessment_created_at, student_score, max_score, percentage } = attempt.rows[0];
-
-    const fallbackStats = await db.query(`
-      SELECT 
-        COALESCE(SUM(gq.marks), 0) as total_marks
-      FROM generated_questions gq
-      WHERE gq.attempt_id = $1
-    `, [attempt_id]);
-    const { total_marks } = fallbackStats.rows[0];
-    const calc_percentage = total_marks > 0 ? Math.round((student_score / total_marks) * 100) : 0;
+    const { attempt_id, time_taken, assessment_title, assessment_created_at, student_score, total_marks, percentage } = attempt.rows[0];
 
     const questionStats = await db.query(`
       SELECT 
@@ -324,18 +346,18 @@ export const getAssessmentAnalytics = async (studentId, assessmentId) => {
       SELECT 
         gq.question_type,
         gq.question_text,
-        (sa.score::NUMERIC / NULLIF(gq.marks, 0)) as performance,
+        (sa.score::NUMERIC / NULLIF(gq.positive_marks, 0)) as performance,
         sa.score as scored_marks,
-        gq.marks
+        gq.positive_marks
       FROM student_answers sa
       JOIN generated_questions gq ON sa.question_id = gq.id
       WHERE sa.attempt_id = $1
-        AND (sa.score::NUMERIC / NULLIF(gq.marks, 0)) <= 0.6
+        AND (sa.score::NUMERIC / NULLIF(gq.positive_marks, 0)) <= 0.6
       ORDER BY performance ASC
     `, [attempt_id]);
 
     const client = await getCreationModel();
-    const prompt = `You are an educational AI assistant. Generate learning recommendations for the assessment "${assessment_title}" with score ${percentage || calc_percentage}%. Weak questions: ${JSON.stringify(weak_questions.rows)}. If no weak questions, provide general recommendations for improvement. Respond ONLY with valid JSON: { "weak_areas": [{ "topic": "descriptive topic", "performance": number, "suggestion": "detailed suggestion" }], "study_plan": { "daily_practice": [{ "topic": "string", "focus": "string", "time_allocation": "string" }], "weekly_review": [{ "topic": "string", "activity": "string", "goal": "string" }] } }. Ensure JSON is parseable.`;
+    const prompt = `You are an educational AI assistant. Generate learning recommendations for the assessment "${assessment_title}" with score ${percentage || 0}%. Weak questions: ${JSON.stringify(weak_questions.rows)}. If no weak questions, provide general recommendations for improvement. Respond ONLY with valid JSON: { "weak_areas": [{ "topic": "descriptive topic", "performance": number, "suggestion": "detailed suggestion" }], "study_plan": { "daily_practice": [{ "topic": "string", "focus": "string", "time_allocation": "string" }], "weekly_review": [{ "topic": "string", "activity": "string", "goal": "string" }] } }. Ensure JSON is parseable.`;
     let responseText = await generateContent(client, prompt, {
       generationConfig: { maxOutputTokens: 1000, temperature: 0.7, response_mime_type: 'application/json' },
       thinkingConfig: { thinkingBudget: 0 },
@@ -369,7 +391,7 @@ export const getAssessmentAnalytics = async (studentId, assessmentId) => {
     return {
       assessment_title,
       assessment_created_at,
-      score: calc_percentage,
+      score: percentage,
       time_taken: Math.floor(time_taken || 0),
       total_questions: questionStats.rows[0].total_questions || 0,
       correct_answers: questionStats.rows[0].correct_answers || 0,
@@ -397,14 +419,14 @@ export const getLearningRecommendations = async (studentId) => {
       SELECT 
         gq.question_type,
         COUNT(*) as question_count,
-        AVG(sa.score * 1.0 / gq.marks) as average_performance
+        AVG(sa.score * 1.0 / gq.positive_marks) as average_performance
       FROM student_answers sa
       JOIN generated_questions gq ON sa.question_id = gq.id
       JOIN assessment_attempts aa ON sa.attempt_id = aa.id
       WHERE aa.student_id = $1 
         AND aa.completed_at IS NOT NULL
         AND sa.score IS NOT NULL
-        AND sa.score <= gq.marks * 0.6
+        AND sa.score <= gq.positive_marks * 0.6
       GROUP BY gq.question_type
       ORDER BY average_performance ASC
       LIMIT 5
@@ -590,7 +612,7 @@ export const getAssessmentQuestions = async (studentId, assessmentId) => {
         gq.question_text,
         gq.question_type,
         gq.options,
-        gq.marks,
+        gq.positive_marks,
         gq.correct_answer,
         sa.student_answer,
         sa.score,
@@ -608,7 +630,7 @@ export const getAssessmentQuestions = async (studentId, assessmentId) => {
       const normalizedStudentAnswer = (q.student_answer || '').trim().replace(/"/g, '').toLowerCase();
       const normalizedCorrectAnswer = (q.correct_answer || '').trim().replace(/"/g, '').toLowerCase();
       const computedIsCorrect = normalizedStudentAnswer === normalizedCorrectAnswer;
-      const computedScore = computedIsCorrect ? q.marks : (q.negative_marks || 0);
+      const computedScore = computedIsCorrect ? q.positive_marks : (q.negative_marks || 0);
 
       return {
         question_id: q.id,
@@ -616,7 +638,7 @@ export const getAssessmentQuestions = async (studentId, assessmentId) => {
         question: q.question_text,
         type: q.question_type,
         options: q.options,
-        max_marks: q.marks,
+        max_marks: q.positive_marks,
         correct_answer: q.correct_answer,
         student_answer: q.student_answer,
         score: computedScore,

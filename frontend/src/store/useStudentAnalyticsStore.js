@@ -1,4 +1,3 @@
-// store/useStudentAnalyticsStore.js
 import { create } from "zustand";
 import axios from "axios";
 import toast from "react-hot-toast";
@@ -165,11 +164,13 @@ const useStudentAnalyticsStore = create((set, get) => ({
           <h2 style="color: #4b5bd7; font-size: 20px; margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 5px;">Assessment Details</h2>
           <table style="width: 100%; margin-top: 10px; border-collapse: collapse;">
             <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Title:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">${details.assessment_title || 'N/A'}</td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Score:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">${details.score}% <span style="color: green;">✔</span></td></tr>
+            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Score:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">${details.score || 0}% <span style="color: green;">✔</span></td></tr>
             <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Time Taken:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">${formatTime(details.time_taken || 0)}</td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Total Questions:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">${calculateAssessmentStats(details).total}</td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Correct Answers:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">${calculateAssessmentStats(details).correct} <span style="color: green;">✔</span></td></tr>
+            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Total Marks:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">${details.total_marks || 0}</td></tr>
+            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Obtained Marks:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">${details.student_score || 0} <span style="color: green;">✔</span></td></tr>
+            <tr><td style="padding: 8px;"><strong>Correct Answers:</strong></td><td style="padding: 8px;">${calculateAssessmentStats(details).correct} <span style="color: green;">✔</span></td></tr>
             <tr><td style="padding: 8px;"><strong>Incorrect Answers:</strong></td><td style="padding: 8px;">${calculateAssessmentStats(details).incorrect} <span style="color: red;">✖</span></td></tr>
+            <tr><td style="padding: 8px;"><strong>Negative Marks Applied:</strong></td><td style="padding: 8px;">${details.negative_marks_applied ? `-${details.negative_marks_applied}` : 0}</td></tr>
           </table>
           <h2 style="color: #4b5bd7; font-size: 20px; margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 5px;">Assessment Topics</h2>
           <ul style="list-style: disc; padding-left: 20px; margin-top: 10px;">
