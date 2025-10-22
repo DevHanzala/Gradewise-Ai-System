@@ -9,6 +9,8 @@ import Modal from "../../components/ui/Modal.jsx";
 import Navbar from "../../components/Navbar.jsx";
 import Footer from "../../components/Footer.jsx";
 import toast from "react-hot-toast";
+import axios from "axios";
+import { FaEye, FaEdit, FaTrash, FaChartBar, FaFilePdf } from "react-icons/fa"; // Import icons
 
 function InstructorDashboard() {
   const navigate = useNavigate();
@@ -17,6 +19,7 @@ function InstructorDashboard() {
   const { overview, loading, getInstructorOverview } = useDashboardStore();
   const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" });
   const [isLoading, setIsLoading] = useState(true);
+  const [pdfLoading, setPdfLoading] = useState(null); // Track loading state per assessment
 
   useEffect(() => {
     const fetchData = async () => {
@@ -45,6 +48,45 @@ function InstructorDashboard() {
   const showModal = (type, title, message) => {
     setModal({ isOpen: true, type, title, message });
     toast[type === "success" ? "success" : "error"](message);
+  };
+
+  const handlePhysicalPaper = async (assessmentId) => {
+    setPdfLoading(assessmentId); // Start loading for this assessment
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) throw new Error("No authentication token found");
+
+      const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+      const response = await axios.get(`${API_URL}/taking/assessments/${assessmentId}/print`, { // Updated path
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: "blob", // Expect binary data (PDF)
+      });
+
+      // Create a temporary blob and store in local storage
+      const pdfBlob = new Blob([response.data], { type: "application/pdf" });
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+      localStorage.setItem(`physicalPaper_${assessmentId}`, pdfUrl);
+
+      // Trigger download
+      const link = document.createElement("a");
+      link.href = pdfUrl;
+      link.download = `assessment_${assessmentId}_physical_paper.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      // Clean up local storage after download
+      URL.revokeObjectURL(pdfUrl);
+      localStorage.removeItem(`physicalPaper_${assessmentId}`);
+
+      toast.success("PDF downloaded successfully!");
+    } catch (error) {
+      console.error("❌ Failed to generate physical paper:", error);
+      const errorMessage = error.response?.data?.message || error.message || "Failed to generate physical paper. Please try again.";
+      toast.error(errorMessage);
+    } finally {
+      setPdfLoading(null); // Stop loading
+    }
   };
 
   const quickActions = [
@@ -80,7 +122,7 @@ function InstructorDashboard() {
       title: "View Analytics",
       description: "Analyze assessment performance",
       icon: "📊",
-      link: "/instructor/assessments/:assessmentId/analytics", // Placeholder, handled by AssessmentAnalytics
+      link: "/instructor/assessments/:assessmentId/analytics",
       color: "bg-indigo-500 hover:bg-indigo-600",
     },
   ];
@@ -190,40 +232,40 @@ function InstructorDashboard() {
                       </thead>
                       <tbody className="divide-y divide-gray-200 bg-white">
                         {assessments.filter(assessment => assessment && assessment.id).slice(0, 5).map((assessment) => (
-                          <tr key={assessment.id}>
+                          <tr key={assessment.id} className="hover:bg-gray-50 transition-colors">
                             <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
                               {assessment.title}
                             </td>
                             <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                               {new Date(assessment.created_at).toLocaleDateString()}
                             </td>
-                            <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6 space-x-2">
+                            <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6 flex justify-end space-x-4">
                               {/* View - Always Show */}
                               <Link
                                 to={`/instructor/assessments/${assessment.id}`}
-                                className="text-blue-600 hover:text-blue-900"
+                                className="text-blue-600 hover:text-blue-900 flex items-center"
                                 onClick={() => console.log(`🔗 Navigating to assessment ID: ${assessment.id}`)}
                               >
-                                View
+                                <FaEye className="mr-1" /> <span className="hidden sm:inline">View</span>
                               </Link>
 
                               {/* Enroll - Always Show */}
                               <Link
                                 to={`/instructor/assessments/${assessment.id}/enroll`}
-                                className="text-green-600 hover:text-green-900"
+                                className="text-green-600 hover:text-green-900 flex items-center"
                                 onClick={() => console.log(`🔗 Navigating to enroll for assessment ID: ${assessment.id}`)}
                               >
-                                Enroll
+                                <FaFilePdf className="mr-1" /> <span className="hidden sm:inline">Enroll</span>
                               </Link>
 
                               {/* Edit - Hide if executed */}
                               {!assessment.is_executed && (
                                 <Link
                                   to={`/instructor/assessments/${assessment.id}/edit`}
-                                  className="text-yellow-600 hover:text-yellow-900"
+                                  className="text-yellow-600 hover:text-yellow-900 flex items-center"
                                   onClick={() => console.log(`🔗 Navigating to edit for assessment ID: ${assessment.id}`)}
                                 >
-                                  Edit
+                                  <FaEdit className="mr-1" /> <span className="hidden sm:inline">Edit</span>
                                 </Link>
                               )}
 
@@ -239,9 +281,9 @@ function InstructorDashboard() {
                                       });
                                     }
                                   }}
-                                  className="text-red-600 hover:text-red-900"
+                                  className="text-red-600 hover:text-red-900 flex items-center"
                                 >
-                                  Delete
+                                  <FaTrash className="mr-1" /> <span className="hidden sm:inline">Delete</span>
                                 </button>
                               )}
 
@@ -249,12 +291,27 @@ function InstructorDashboard() {
                               {assessment.is_executed && (
                                 <Link
                                   to={`/instructor/assessments/${assessment.id}/analytics`}
-                                  className="text-indigo-600 hover:text-indigo-900"
+                                  className="text-indigo-600 hover:text-indigo-900 flex items-center"
                                   onClick={() => console.log(`🔗 Navigating to analytics for assessment ID: ${assessment.id}`)}
                                 >
-                                  Analytics
+                                  <FaChartBar className="mr-1" /> <span className="hidden sm:inline">Analytics</span>
                                 </Link>
                               )}
+
+                              {/* Physical Paper - Always Show */}
+                              <button
+                                onClick={() => handlePhysicalPaper(assessment.id)}
+                                className="text-orange-600 hover:text-orange-900 flex items-center"
+                                disabled={pdfLoading === assessment.id}
+                              >
+                                {pdfLoading === assessment.id ? (
+                                  <LoadingSpinner size="sm" />
+                                ) : (
+                                  <>
+                                    <FaFilePdf className="mr-1" /> <span className="hidden sm:inline">Physical Paper</span>
+                                  </>
+                                )}
+                              </button>
                             </td>
                           </tr>
                         ))}

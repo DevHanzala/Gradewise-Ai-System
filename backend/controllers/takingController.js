@@ -1,6 +1,9 @@
 import db from "../DB/db.js";
 import { getCreationModel, getCheckingModel, mapLanguageCode, generateContent } from "../services/geminiService.js";
 import { generateAssessmentQuestions } from "../models/assessmentModel.js";
+import { PDFDocument, rgb } from "pdf-lib";
+import fs from "fs";
+import path from "path";
 
 const checkAnswer = (questionType, studentAnswer, correctAnswer) => {
   if (studentAnswer === undefined || studentAnswer === null) return false;
@@ -202,7 +205,7 @@ export const submitAssessmentForStudent = async (req, res) => {
     console.log(`✅ Assessment ${assessmentId} submitted, attempt ${attemptId}, score: ${totalScore}`);
 
     res.status(200).json({
-      success: false,
+      success: true,
       message: "Assessment submitted successfully",
       data: { attemptId, score: totalScore, answers: evaluatedAnswers },
     });
@@ -254,43 +257,174 @@ export const getSubmissionDetailsForStudent = async (req, res) => {
 };
 
 export const getAssessmentForInstructorPrint = async (req, res) => {
+  let attemptId; // Declare attemptId in outer scope
   try {
     const { assessmentId } = req.params;
     const userId = req.user.id;
-    const userRole = req.user.role;
 
-    console.log(`📋 Fetching assessment ${assessmentId} for printing by user ${userId} (${userRole})`);
+    console.log(`📋 Generating physical paper for assessment ${assessmentId} by instructor ${userId}`);
 
+    // Fetch assessment details
     const { rows: assessmentRows } = await db.query(
-      `SELECT a.*, 
-              (SELECT json_agg(
-                 json_build_object(
-                   'question_type', qb.question_type,
-                   'question_count', qb.question_count,
-                   'duration_per_question', qb.duration_per_question,
-                   'num_options', qb.num_options,
-                   'num_first_side', qb.num_first_side,
-                   'num_second_side', qb.num_second_side,
-                   'positive_marks', qb.positive_marks,
-                   'negative_marks', qb.negative_marks
-                 )
-              ) FROM question_blocks qb WHERE qb.assessment_id = a.id) as question_blocks
+      `SELECT a.id, a.title, a.prompt, a.external_links, a.instructor_id, 
+              COALESCE(ARRAY_AGG(
+                json_build_object(
+                  'question_type', qb.question_type,
+                  'question_count', qb.question_count,
+                  'duration_per_question', qb.duration_per_question,
+                  'num_options', qb.num_options,
+                  'num_first_side', qb.num_first_side,
+                  'num_second_side', qb.num_second_side,
+                  'positive_marks', qb.positive_marks,
+                  'negative_marks', qb.negative_marks
+                )
+              ) FILTER (WHERE qb.id IS NOT NULL), ARRAY[]::json[]) AS question_blocks
        FROM assessments a
-       WHERE a.id = $1 AND a.instructor_id = $2`,
+       LEFT JOIN question_blocks qb ON a.id = qb.assessment_id
+       WHERE a.id = $1 AND a.instructor_id = $2
+       GROUP BY a.id`,
       [assessmentId, userId]
     );
     if (assessmentRows.length === 0) {
       console.warn(`⚠️ Assessment ${assessmentId} not found for instructor ${userId}`);
       return res.status(404).json({ success: false, message: "Assessment not found or access denied" });
     }
+    const assessment = assessmentRows[0];
 
-    res.status(200).json({
-      success: true,
-      message: "Assessment retrieved for printing",
-      data: assessmentRows[0],
-    });
+    // Create a temporary assessment attempt with auto-incremented ID and is_physical_paper flag
+    const { rows: attemptRows } = await db.query(
+      `INSERT INTO assessment_attempts (assessment_id, student_id, attempt_number, started_at, language, status, is_physical_paper)
+       VALUES ($1, $2, 1, NOW(), $3, 'in_progress', $4)
+       RETURNING id`,
+      [assessmentId, userId, "en", true]
+    );
+    attemptId = attemptRows[0].id;
+
+    console.log(`✅ Created temporary attempt ${attemptId} for physical paper`);
+
+    // Generate questions for physical paper
+    const { questions, duration } = await generateAssessmentQuestions(assessmentId, attemptId, "en", assessment);
+
+    let pdfBytes;
+    let pdfLibraryUsed = "unknown";
+
+    // Try dynamic import of jsPDF
+    let jsPDFModule;
+    try {
+      jsPDFModule = await import('jspdf');
+      const doc = new jsPDFModule.default({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+      });
+
+      doc.setFontSize(20);
+      doc.text(assessment.title || "Physical Paper Assessment", 10, 10);
+
+      let y = 20;
+      questions.forEach((q, index) => {
+        if (y > 280) {
+          doc.addPage();
+          y = 10;
+        }
+        doc.setFontSize(12);
+        doc.text(`Q${index + 1}. ${q.question_text}`, 10, y);
+        y += 10;
+
+        if (q.options) {
+          q.options.forEach((option, optIndex) => {
+            if (y > 280) {
+              doc.addPage();
+              y = 10;
+            }
+            doc.setFontSize(10);
+            doc.text(`${String.fromCharCode(65 + optIndex)}. ${option}`, 15, y);
+            y += 5;
+          });
+        }
+
+        if (y > 280) {
+          doc.addPage();
+          y = 10;
+        }
+        doc.setFontSize(10);
+        doc.setTextColor(128, 0, 0); // Red for emphasis
+        doc.text(`Correct Answer: ${q.correct_answer}`, 15, y);
+        doc.setTextColor(0, 0, 0); // Reset to black
+        y += 10;
+      });
+
+      pdfBytes = doc.output('arraybuffer');
+      pdfLibraryUsed = "jsPDF";
+      console.log(`📄 PDF generated with ${pdfLibraryUsed}, buffer size: ${pdfBytes.byteLength} bytes`);
+    } catch (jspdfError) {
+      console.warn(`⚠️ jsPDF failed to load or initialize: ${jspdfError.message}, falling back to pdf-lib`);
+
+      // Fall back to pdf-lib
+      const pdfDoc = await PDFDocument.create();
+      const page = pdfDoc.addPage([595.28, 841.89]); // A4 size in points
+      let y = 750;
+
+      page.drawText(assessment.title || "Physical Paper Assessment", { x: 50, y, size: 20, color: rgb(0, 0, 0) });
+      y -= 40;
+
+      questions.forEach((q, index) => {
+        if (y < 50) {
+          page = pdfDoc.addPage([595.28, 841.89]);
+          y = 750;
+        }
+        page.drawText(`Q${index + 1}. ${q.question_text}`, { x: 50, y, size: 12, color: rgb(0, 0, 0) });
+        y -= 20;
+
+        if (q.options) {
+          q.options.forEach((option, optIndex) => {
+            if (y < 50) {
+              page = pdfDoc.addPage([595.28, 841.89]);
+              y = 750;
+            }
+            page.drawText(`${String.fromCharCode(65 + optIndex)}. ${option}`, { x: 70, y, size: 10, color: rgb(0, 0, 0) });
+            y -= 15;
+          });
+        }
+
+        if (y < 50) {
+          page = pdfDoc.addPage([595.28, 841.89]);
+          y = 750;
+        }
+        page.drawText(`Correct Answer: ${q.correct_answer}`, { x: 70, y, size: 10, color: rgb(0.5, 0, 0) });
+        y -= 20;
+      });
+
+      pdfBytes = await pdfDoc.save();
+      pdfLibraryUsed = "pdf-lib";
+      console.log(`📄 PDF generated with ${pdfLibraryUsed}, buffer size: ${pdfBytes.length} bytes`);
+    }
+
+    // Validate PDF
+    const pdfText = new TextDecoder().decode(new Uint8Array(pdfBytes).slice(0, 10));
+    if (!pdfText.startsWith('%PDF-')) {
+      console.error(`⚠️ Invalid PDF header: ${pdfText}`);
+      throw new Error("PDF generation failed: invalid header");
+    }
+
+    // Clean up: Mark attempt as completed
+    await db.query(
+      `UPDATE assessment_attempts SET status = 'completed', completed_at = NOW() WHERE id = $1`,
+      [attemptId]
+    );
+
+    // Set response headers for download
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="assessment_${assessmentId}_physical_paper.pdf"`);
+    res.setHeader("Content-Length", Buffer.from(pdfBytes).length);
+    res.send(Buffer.from(pdfBytes));
   } catch (error) {
     console.error("❌ getAssessmentForInstructorPrint error:", error.message, error.stack);
-    res.status(500).json({ success: false, message: "Failed to retrieve assessment for printing" });
+    // Roll back attempt on failure
+    if (attemptId) {
+      await db.query(`DELETE FROM assessment_attempts WHERE id = $1`, [attemptId])
+        .catch(err => console.error("❌ Failed to clean up attempt:", err));
+    }
+    res.status(500).json({ success: false, message: "Failed to generate physical paper" });
   }
 };
