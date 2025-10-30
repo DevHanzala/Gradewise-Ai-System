@@ -1,4 +1,3 @@
-// server.js or index.js
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -13,40 +12,32 @@ import studentAnalyticsRoutes from "./routes/studentAnalyticsRoutes.js";
 import takingRoutes from "./routes/takingRoutes.js";
 import instructorAssessmentAnalyticsRoutes from "./routes/instructorAssessmentAnalyticsRoutes.js";
 import { errorHandler, notFound } from "./middleware/errorMiddleware.js";
-import fs from "fs/promises";
-import path from "path";
+// REMOVED: import fs from "fs/promises";
+// REMOVED: import path from "path"; → not needed anymore
 
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+dotenv.config({ path: new URL('.env', import.meta.url).pathname });
 console.log("GEMINI_CREATION_API_KEY loaded:", process.env.GEMINI_CREATION_API_KEY ? "Yes" : "No");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Create uploads directory
-const ensureUploadsDir = async () => {
-  const uploadPath = path.join(process.cwd(), "Uploads", "assessments");
-  try {
-    await fs.mkdir(uploadPath, { recursive: true });
-    console.log("✅ Uploads directory ensured at:", uploadPath);
-  } catch (error) {
-    console.error("❌ Error creating uploads directory:", error);
-  }
-};
+// REMOVED: ensureUploadsDir function — no disk, no folder needed
 
 // Connect to database and initialize tables
 const startServer = async () => {
   try {
     await connectDB(); // Connect to database
     await initResourceModel(); // Initialize resources and resource_chunks
-    await initAssessmentModel(); // Initialize assessments, question_blocks, assessment_resources, enrollments
-    await ensureUploadsDir();
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📊 Environment: ${process.env.NODE_ENV || "development"}`);
-    console.log(`🌐 Frontend URL: ${process.env.FRONTEND_URL || "http://localhost:5173"}`);
-    console.log(`🔧 API Health Check: http://localhost:${PORT}/api/health`);
+    await initAssessmentModel(); // Initialize assessments, question_blocks, etc.
+    // REMOVED: await ensureUploadsDir(); → no disk usage
+
+    console.log(`Server running on port ${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
+    console.log(`Frontend URL: ${process.env.FRONTEND_URL || "http://localhost:5173"}`);
+    console.log(`API Health Check: http://localhost:${PORT}/api/health`);
     app.listen(PORT);
   } catch (error) {
-    console.error("❌ Failed to start server:", error);
+    console.error("Failed to start server:", error);
     process.exit(1);
   }
 };
@@ -63,7 +54,7 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // Request logging
 app.use((req, res, next) => {
-  console.log(`📡 ${req.method} ${req.originalUrl} - ${new Date().toISOString()}`);
+  console.log(`${req.method} ${req.originalUrl} - ${new Date().toISOString()}`);
   next();
 });
 
@@ -98,11 +89,11 @@ startServer();
 
 // Handle unhandled errors
 process.on("unhandledRejection", (err) => {
-  console.error("❌ Unhandled Promise Rejection:", err.message);
+  console.error("Unhandled Promise Rejection:", err.message);
   process.exit(1);
 });
 process.on("uncaughtException", (err) => {
-  console.error("❌ Uncaught Exception:", err.message);
+  console.error("Uncaught Exception:", err.message);
   process.exit(1);
 });
 

@@ -60,6 +60,24 @@ const PhysicalPaperModal = ({ isOpen, onClose, assessmentId, assessmentTitle }) 
     return dims[size] || dims.A4;
   };
 
+  // COMMON TEXT WRAPPING FOR PDF
+  const wrapText = (text, font, size, maxWidth) => {
+    const words = text.split(" ");
+    let line = "";
+    const lines = [];
+    words.forEach(word => {
+      const test = line + word + " ";
+      if (font.widthOfTextAtSize(test, size) > maxWidth && line) {
+        lines.push(line.trim());
+        line = word + " ";
+      } else {
+        line = test;
+      }
+    });
+    if (line) lines.push(line.trim());
+    return lines;
+  };
+
   const generatePDF = async () => {
     const pdfDoc = await PDFDocument.create();
     const [w, h] = getPageDims(form.pageSize);
@@ -69,7 +87,7 @@ const PhysicalPaperModal = ({ isOpen, onClose, assessmentId, assessmentTitle }) 
     try {
       font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
       bold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
-    } catch (err) {
+    } catch {
       font = await pdfDoc.embedFont(StandardFonts.Helvetica);
       bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     }
@@ -81,36 +99,20 @@ const PhysicalPaperModal = ({ isOpen, onClose, assessmentId, assessmentTitle }) 
     const questionSize = Number(form.questionFontSize) || 12;
     const optionSize = Number(form.optionFontSize) || 11;
 
-    const draw = (txt, size, isBold = false, color = rgb(0, 0, 0), align = "left") => {
+    const draw = (txt, size, isBold = false, color = rgb(0,0,0), align = "left") => {
       const f = isBold ? bold : font;
-      const x = align === "center" ? w / 2 : margin;
-      const maxWidth = w - 2 * margin;
+      const x = align === "center" ? w/2 : margin;
+      const maxW = w - 2*margin;
+      const lines = wrapText(txt, f, size, maxW);
 
-      // Split long text into lines
-      const words = txt.split(" ");
-      let line = "";
-      const lines = [];
-
-      words.forEach(word => {
-        const testLine = line + word + " ";
-        const width = f.widthOfTextAtSize(testLine, size);
-        if (width > maxWidth && line) {
-          lines.push(line.trim());
-          line = word + " ";
-        } else {
-          line = testLine;
-        }
-      });
-      if (line) lines.push(line.trim());
-
-      lines.forEach(l => {
-        if (y < 120) {
+      lines.forEach(line => {
+        if (y < 100) {
           page = pdfDoc.addPage([w, h]);
           y = h - 80;
           drawHeaderBorder();
         }
-        page.drawText(l, { x, y, size: Number(size), font: f, color, maxWidth });
-        y -= Number(size) * lineHeight;
+        page.drawText(line, { x, y, size, font: f, color, maxWidth: maxW });
+        y -= size * lineHeight;
       });
     };
 
@@ -119,13 +121,13 @@ const PhysicalPaperModal = ({ isOpen, onClose, assessmentId, assessmentTitle }) 
         start: { x: margin, y: y + 15 },
         end: { x: w - margin, y: y + 15 },
         thickness: 1.5,
-        color: rgb(0, 0, 0),
+        color: rgb(0,0,0),
       });
     };
 
-    // HEADER — NO DURATION/TOTAL
+    // HEADER — NO "University:", NO Duration/Total
     if (form.instituteName) {
-      draw(`University: ${form.instituteName}`, headerSize, true, rgb(0, 0, 0), "center");
+      draw(form.instituteName, headerSize, true, rgb(0,0,0), "center");
       y -= 20;
     }
 
@@ -155,14 +157,13 @@ const PhysicalPaperModal = ({ isOpen, onClose, assessmentId, assessmentTitle }) 
       page.drawText(form.paperTime, { x: rightX + 45, y: tempY, size: 12, font });
     }
 
-    // NOTES IN HEADER
+    // NOTES
     if (form.notes.trim()) {
       y -= 20;
       page.drawText("Notes:", { x: margin, y: y, size: 12, font: bold });
       y -= 18;
-      const noteLines = form.notes.split("\n").filter(l => l.trim());
-      noteLines.forEach(line => {
-        draw(line.trim(), 11, false, rgb(0, 0, 0));
+      form.notes.split("\n").filter(l => l.trim()).forEach(line => {
+        draw(line.trim(), 11, false);
       });
     }
 
@@ -170,29 +171,18 @@ const PhysicalPaperModal = ({ isOpen, onClose, assessmentId, assessmentTitle }) 
     drawHeaderBorder();
     y -= 30;
 
-    // QUESTIONS — FIXED: Always print
-    if (!questions || questions.length === 0) {
-      draw("No questions available.", 12, false, rgb(0.5, 0, 0));
+    // QUESTIONS — ALWAYS PRINT
+    if (!questions?.length) {
+      draw("No questions available.", 12, false, rgb(0.5,0,0));
     } else {
       questions.forEach((q, i) => {
-        if (y < 200) {
-          page = pdfDoc.addPage([w, h]);
-          y = h - 80;
-          drawHeaderBorder();
-          y -= 30;
-        }
-
+        if (y < 200) { page = pdfDoc.addPage([w, h]); y = h - 80; drawHeaderBorder(); y -= 30; }
         draw(`Q${i + 1}. ${q.question_text}`, questionSize, true);
         y -= 10;
 
         if (q.options && Array.isArray(q.options)) {
           q.options.forEach((opt, oi) => {
-            if (y < 80) {
-              page = pdfDoc.addPage([w, h]);
-              y = h - 80;
-              drawHeaderBorder();
-              y -= 30;
-            }
+            if (y < 80) { page = pdfDoc.addPage([w, h]); y = h - 80; drawHeaderBorder(); y -= 30; }
             draw(`${String.fromCharCode(65 + oi)}. ${opt}`, optionSize);
           });
         }
@@ -200,99 +190,92 @@ const PhysicalPaperModal = ({ isOpen, onClose, assessmentId, assessmentTitle }) 
       });
     }
 
-    // ANSWER KEY — NEW PAGE
+    // ANSWER KEY
     page = pdfDoc.addPage([w, h]);
     y = h - 80;
     drawHeaderBorder();
     y -= 30;
-    draw("ANSWER KEY", 20, true, rgb(0, 0, 0), "center");
+    draw("ANSWER KEY", 20, true, rgb(0,0,0), "center");
     y -= 25;
 
     questions.forEach((q, i) => {
-      if (y < 80) {
-        page = pdfDoc.addPage([w, h]);
-        y = h - 80;
-        drawHeaderBorder();
-        y -= 30;
-      }
-      const answer = q.correct_answer || "Not specified";
-      draw(`Q${i + 1}: ${answer}`, 12, false, rgb(0, 0, 0));
+      if (y < 80) { page = pdfDoc.addPage([w, h]); y = h - 80; drawHeaderBorder(); y -= 30; }
+      const ans = q.correct_answer || "N/A";
+      draw(`Q${i + 1}: ${ans}`, 12, false);
       y -= 12;
     });
 
-    const bytes = await pdfDoc.save();
-    return new Blob([bytes], { type: "application/pdf" });
+    return new Blob([await pdfDoc.save()], { type: "application/pdf" });
   };
 
   const generateDOCX = async () => {
     const children = [];
-    const headerSize = Number(form.headerFontSize) || 18;
-    const questionSize = Number(form.questionFontSize) || 12;
-    const optionSize = Number(form.optionFontSize) || 11;
+    const hs = Number(form.headerFontSize) * 2 || 36;
+    const qs = Number(form.questionFontSize) * 2 || 24;
+    const os = Number(form.optionFontSize) * 2 || 22;
 
-    // HEADER
+    // HEADER — NO "University:"
     if (form.instituteName) {
-      children.push(new Paragraph({ 
-        children: [new TextRun({ text: `University: ${form.instituteName}`, bold: true, size: headerSize * 2 })], 
-        alignment: AlignmentType.CENTER, 
-        spacing: { after: 200 } 
+      children.push(new Paragraph({
+        children: [new TextRun({ text: form.instituteName, bold: true, size: hs })],
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 200 }
       }));
     }
 
-    const leftLines = [];
-    if (form.teacherName) leftLines.push(`Teacher: ${form.teacherName}`);
-    if (form.subjectName) leftLines.push(`Subject: ${form.subjectName}`);
+    const left = [];
+    if (form.teacherName) left.push(`Teacher: ${form.teacherName}`);
+    if (form.subjectName) left.push(`Subject: ${form.subjectName}`);
 
-    const rightLines = [];
-    if (form.paperDate) rightLines.push(`Date: ${form.paperDate}`);
-    if (form.paperTime) rightLines.push(`Time: ${form.paperTime}`);
+    const right = [];
+    if (form.paperDate) right.push(`Date: ${form.paperDate}`);
+    if (form.paperTime) right.push(`Time: ${form.paperTime}`);
 
-    const maxLines = Math.max(leftLines.length, rightLines.length);
-    for (let i = 0; i < maxLines; i++) {
-      const left = leftLines[i] || "";
-      const right = rightLines[i] || "";
-      const [lLabel, lValue] = left.split(": ");
-      const [rLabel, rValue] = right.split(": ");
+    const max = Math.max(left.length, right.length);
+    for (let i = 0; i < max; i++) {
+      const l = left[i] || "";
+      const r = right[i] || "";
+      const [ll, lv] = l.split(": ");
+      const [rl, rv] = r.split(": ");
 
       children.push(new Paragraph({
         children: [
-          new TextRun({ text: (lLabel ? `${lLabel}: ` : ""), bold: true, size: 24 }),
-          new TextRun({ text: (lValue || ""), size: 24 }),
-          new TextRun({ text: " ".repeat(40), size: 24 }),
-          new TextRun({ text: (rLabel ? `${rLabel}: ` : ""), bold: true, size: 24 }),
-          new TextRun({ text: (rValue || ""), size: 24 })
+          new TextRun({ text: (ll ? `${ll}: ` : ""), bold: true, size: 24 }),
+          new TextRun({ text: lv || "", size: 24 }),
+          new TextRun({ text: " ".repeat(35), size: 24 }),
+          new TextRun({ text: (rl ? `${rl}: ` : ""), bold: true, size: 24 }),
+          new TextRun({ text: rv || "", size: 24 })
         ]
       }));
     }
 
     if (form.notes.trim()) {
       children.push(new Paragraph({ children: [new TextRun({ text: "Notes:", bold: true, size: 24 })] }));
-      form.notes.split("\n").filter(l => l.trim()).forEach(line => {
-        children.push(new Paragraph({ children: [new TextRun({ text: line.trim(), size: 22 })] }));
+      form.notes.split("\n").filter(l => l.trim()).forEach(l => {
+        children.push(new Paragraph({ children: [new TextRun({ text: l.trim(), size: 22 })] }));
       });
     }
 
-    children.push(new Paragraph({ 
-      children: [new TextRun({ text: "______________________________________________________________", size: 24 })], 
-      alignment: AlignmentType.CENTER, 
-      spacing: { after: 300 } 
+    children.push(new Paragraph({
+      children: [new TextRun({ text: "______________________________________________________________", size: 24 })],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 300 }
     }));
 
     // QUESTIONS
-    if (!questions || questions.length === 0) {
+    if (!questions?.length) {
       children.push(new Paragraph({ children: [new TextRun({ text: "No questions available.", italic: true })] }));
     } else {
       questions.forEach((q, i) => {
-        children.push(new Paragraph({ 
-          children: [new TextRun({ text: `Q${i + 1}. ${q.question_text}`, bold: true, size: questionSize * 2 })], 
-          spacing: { after: 160 } 
+        children.push(new Paragraph({
+          children: [new TextRun({ text: `Q${i + 1}. ${q.question_text}`, bold: true, size: qs })],
+          spacing: { after: 160 }
         }));
-
         if (q.options && Array.isArray(q.options)) {
           q.options.forEach((opt, oi) => {
-            children.push(new Paragraph({ 
-              children: [new TextRun({ text: `${String.fromCharCode(65 + oi)}. ${opt}`, size: optionSize * 2 })], 
-              indent: { left: 800 } 
+            children.push(new Paragraph({
+              children: [new TextRun({ text: `${String.fromCharCode(65 + oi)}. ${opt}`, size: os })],
+              indent: { left: 800 }
             }));
           });
         }
@@ -302,44 +285,36 @@ const PhysicalPaperModal = ({ isOpen, onClose, assessmentId, assessmentTitle }) 
 
     // ANSWER KEY
     children.push(new Paragraph({ children: [new PageBreak()] }));
-    children.push(new Paragraph({ 
-      children: [new TextRun({ text: "______________________________________________________________", size: 24 })], 
-      alignment: AlignmentType.CENTER, 
-      spacing: { after: 300 } 
+    children.push(new Paragraph({
+      children: [new TextRun({ text: "______________________________________________________________", size: 24 })],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 300 }
     }));
-    children.push(new Paragraph({ 
-      children: [new TextRun({ text: "ANSWER KEY", bold: true, size: 40 })], 
-      alignment: AlignmentType.CENTER, 
-      spacing: { after: 400 } 
+    children.push(new Paragraph({
+      children: [new TextRun({ text: "ANSWER KEY", bold: true, size: 40 })],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 400 }
     }));
 
     questions.forEach((q, i) => {
-      const answer = q.correct_answer || "Not specified";
-      children.push(new Paragraph({ 
-        children: [new TextRun({ text: `Q${i + 1}: ${answer}`, size: 26 })] 
-      }));
+      const ans = q.correct_answer || "N/A";
+      children.push(new Paragraph({ children: [new TextRun({ text: `Q${i + 1}: ${ans}`, size: 26 })] }));
     });
 
-    const doc = new Document({ sections: [{ children }], defaultFont: "Times New Roman" });
-    return await Packer.toBlob(doc);
+    return await Packer.toBlob(new Document({ sections: [{ children }] }));
   };
 
   const handleSubmit = async () => {
     if (!assessmentId) return toast.error("No assessment selected");
-
     setLoading(true);
     try {
       const token = localStorage.getItem("token");
       const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+      const { data } = await axios.get(`${API_URL}/taking/assessments/${assessmentId}/print`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
 
-      const { data } = await axios.get(
-        `${API_URL}/taking/assessments/${assessmentId}/print`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      console.log("API Response:", data); // DEBUG
-
-      const { questions: q } = data;
+      const q = data?.questions;
       if (!q || !Array.isArray(q) || q.length === 0) {
         toast.error("No questions received.");
         setLoading(false);
@@ -347,16 +322,13 @@ const PhysicalPaperModal = ({ isOpen, onClose, assessmentId, assessmentTitle }) 
       }
 
       setQuestions(q);
-
       const blob = form.format === "pdf" ? await generatePDF() : await generateDOCX();
-      const ext = form.format === "pdf" ? "pdf" : "docx";
-      saveAs(blob, `${assessmentTitle.replace(/\s+/g, "_")}_paper.${ext}`);
-
-      toast.success("Paper generated successfully!");
+      saveAs(blob, `${assessmentTitle.replace(/\s+/g, "_")}_paper.${form.format}`);
+      toast.success("Generated successfully!");
       onClose();
     } catch (err) {
-      console.error("Error:", err);
-      toast.error("Failed to generate paper.");
+      console.error(err);
+      toast.error("Failed to generate.");
     } finally {
       setLoading(false);
     }
