@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import useAssessmentStore from "../../../store/assessmentStore.js";
 import useResourceStore from "../../../store/resourceStore.js";
@@ -8,6 +8,7 @@ import Modal from "../../../components/ui/Modal";
 import Navbar from "../../../components/Navbar";
 import Footer from "../../../components/Footer";
 import toast from "react-hot-toast";
+import { io } from "socket.io-client"; // NEW
 
 function CreateAssessment() {
   const navigate = useNavigate();
@@ -35,8 +36,42 @@ function CreateAssessment() {
   const [selectedResources, setSelectedResources] = useState([]);
   const [newFiles, setNewFiles] = useState([]);
 
+  // NEW: Progress state
+  const [progress, setProgress] = useState(0);
+  const [progressMessage, setProgressMessage] = useState("");
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  // NEW: Socket ref
+  const socketRef = useRef(null);
+
   useEffect(() => {
     fetchAllResources();
+
+    // NEW: Connect to Socket.IO
+    const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+    const socket = io(API_URL, {
+      transports: ["websocket"],
+      withCredentials: true,
+    });
+
+    socketRef.current = socket;
+
+    socket.on("connect", () => {
+      console.log("Socket connected:", socket.id);
+    });
+
+    socket.on("assessment-progress", (data) => {
+      setProgress(data.percent);
+      setProgressMessage(data.message);
+    });
+
+    socket.on("disconnect", () => {
+      console.log("Socket disconnected");
+    });
+
+    return () => {
+      socket.disconnect();
+    };
   }, [fetchAllResources]);
 
   const handleInputChange = (e) => {
@@ -55,11 +90,11 @@ function CreateAssessment() {
               ...block,
               [field]:
                 field === "question_count" || field === "duration_per_question" || field === "num_options"
-                  ? Math.max(Number.parseInt(value) || 1, 1) // Ensure minimum 1 for counts/options
+                  ? Math.max(Number.parseInt(value) || 1, 1)
                   : field === "positive_marks" || field === "negative_marks"
                   ? value === "" || value === null
                     ? null
-                    : Math.max(Number.parseFloat(value) || 0, 0) // Ensure non-negative marks
+                    : Math.max(Number.parseFloat(value) || 0, 0)
                   : value,
             }
           : block
@@ -127,7 +162,6 @@ function CreateAssessment() {
       return "Title must be a non-empty string if provided";
     }
 
-    // Validate question_blocks if provided
     if (questionBlocks && Array.isArray(questionBlocks) && questionBlocks.length > 0) {
       for (const block of questionBlocks) {
         if (!block.question_count || block.question_count < 1) {
@@ -147,6 +181,7 @@ function CreateAssessment() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
     const validationError = validateForm();
     if (validationError) {
       setModal({
@@ -157,6 +192,10 @@ function CreateAssessment() {
       });
       return;
     }
+
+    setIsProcessing(true);
+    setProgress(0);
+    setProgressMessage("Starting...");
 
     const assessmentData = new FormData();
     assessmentData.append("title", formData.title ? formData.title.trim() : null);
@@ -176,16 +215,24 @@ function CreateAssessment() {
       )
     );
     assessmentData.append("selected_resources", JSON.stringify(selectedResources));
+
+    // NEW: Attach socket ID
+    if (socketRef.current?.id) {
+      assessmentData.append("socketId", socketRef.current.id);
+    }
+
     newFiles.forEach((file) => assessmentData.append("new_files", file));
 
     try {
       await createAssessment(assessmentData);
+
       setModal({
         isOpen: true,
         type: "success",
         title: "Success",
         message: "Assessment created successfully!",
       });
+
       setTimeout(() => {
         navigate("/instructor/assessments");
       }, 1500);
@@ -196,6 +243,8 @@ function CreateAssessment() {
         title: "Error",
         message: err.message || "Failed to create assessment",
       });
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -206,7 +255,29 @@ function CreateAssessment() {
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-6">Create New Assessment</h1>
 
+        {/* NEW: Progress Bar */}
+        {isProcessing && (
+          <Card className="mb-6 border-blue-200 bg-blue-50">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-blue-900">{progressMessage}</p>
+                <p className="text-sm font-semibold text-blue-900">{Math.round(progress)}%</p>
+              </div>
+              <div className="w-full bg-blue-200 rounded-full h-3">
+                <div
+                  className="bg-blue-600 h-3 rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <form onSubmit={handleSubmit}>
+          {/* ... [All your existing form cards] ... */}
+          {/* (Title, Prompt, Resources, Links, Question Blocks) */}
+          {/* Keeping all your existing JSX unchanged below */}
+
           <Card className="mb-6">
             <CardHeader>
               <h2 className="text-xl font-semibold text-gray-900">Assessment Details</h2>
@@ -258,6 +329,7 @@ function CreateAssessment() {
                         accept=".pdf,.doc,.docx,.txt"
                         onChange={handleFileChange}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        disabled={isProcessing}
                       />
                       {newFiles.length > 0 && (
                         <ul className="mt-2 space-y-1">
@@ -283,6 +355,7 @@ function CreateAssessment() {
                                 checked={selectedResources.includes(resource.id)}
                                 onChange={() => handleResourceToggle(resource.id)}
                                 className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                                disabled={isProcessing}
                               />
                               <label htmlFor={`resource-${resource.id}`} className="ml-2 text-sm text-gray-600">
                                 {resource.name} ({resource.content_type})
@@ -307,12 +380,14 @@ function CreateAssessment() {
                         onChange={(e) => handleLinkChange(index, e.target.value)}
                         placeholder="https://example.com"
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        disabled={isProcessing}
                       />
                       {formData.externalLinks.length > 1 && (
                         <button
                           type="button"
                           onClick={() => removeExternalLink(index)}
                           className="px-3 py-1 bg-red-100 text-red-600 rounded-md hover:bg-red-200"
+                          disabled={isProcessing}
                         >
                           Remove
                         </button>
@@ -323,6 +398,7 @@ function CreateAssessment() {
                     type="button"
                     onClick={addExternalLink}
                     className="mt-2 px-4 py-2 bg-blue-100 text-blue-600 rounded-md hover:bg-blue-200"
+                    disabled={isProcessing}
                   >
                     Add Link
                   </button>
@@ -345,6 +421,7 @@ function CreateAssessment() {
                         type="button"
                         onClick={() => removeQuestionBlock(index)}
                         className="text-red-600 hover:text-red-800"
+                        disabled={isProcessing}
                       >
                         Remove Block
                       </button>
@@ -357,6 +434,7 @@ function CreateAssessment() {
                         value={block.question_type}
                         onChange={(e) => handleBlockChange(index, "question_type", e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        disabled={isProcessing}
                       >
                         <option value="multiple_choice">Multiple Choice</option>
                         <option value="short_answer">Short Answer</option>
@@ -373,6 +451,7 @@ function CreateAssessment() {
                         min="1"
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         required
+                        disabled={isProcessing}
                       />
                     </div>
 
@@ -385,6 +464,7 @@ function CreateAssessment() {
                         min="30"
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         required
+                        disabled={isProcessing}
                       />
                     </div>
 
@@ -398,6 +478,7 @@ function CreateAssessment() {
                           min="2"
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                           required
+                          disabled={isProcessing}
                         />
                       </div>
                     )}
@@ -411,6 +492,7 @@ function CreateAssessment() {
                         min="0"
                         step="0.1"
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        disabled={isProcessing}
                       />
                     </div>
 
@@ -423,6 +505,7 @@ function CreateAssessment() {
                         min="0"
                         step="0.1"
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        disabled={isProcessing}
                       />
                     </div>
                   </div>
@@ -432,6 +515,7 @@ function CreateAssessment() {
                 type="button"
                 onClick={addQuestionBlock}
                 className="mt-4 px-4 py-2 bg-blue-100 text-blue-600 rounded-md hover:bg-blue-200"
+                disabled={isProcessing}
               >
                 Add Question Block
               </button>
@@ -443,15 +527,21 @@ function CreateAssessment() {
               type="button"
               onClick={() => navigate("/instructor/assessments")}
               className="px-6 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition duration-200"
+              disabled={isProcessing}
             >
               Cancel
             </button>
             <button
               type="submit"
               className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-              disabled={loading}
+              disabled={loading || isProcessing}
             >
-              {loading ? (
+              {isProcessing ? (
+                <>
+                  <LoadingSpinner size="sm" color="white" />
+                  <span className="ml-2">Processing...</span>
+                </>
+              ) : loading ? (
                 <>
                   <LoadingSpinner size="sm" color="white" />
                   <span className="ml-2">Creating...</span>

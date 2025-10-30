@@ -10,7 +10,18 @@ import Navbar from "../../components/Navbar.jsx";
 import Footer from "../../components/Footer.jsx";
 import toast from "react-hot-toast";
 import axios from "axios";
-import { FaEye, FaEdit, FaTrash, FaChartBar, FaFilePdf } from "react-icons/fa";
+import { 
+  FaEye, 
+  FaEdit, 
+  FaTrash, 
+  FaChartBar, 
+  FaFilePdf,
+  FaPen,
+  FaBook,
+  FaSchool,
+  FaUserGraduate,
+  FaChartLine
+} from "react-icons/fa";
 
 // NEW: Import Physical Paper Modal
 import PhysicalPaperModal from "../../components/PhysicalPaperModal.jsx";
@@ -22,7 +33,6 @@ function InstructorDashboard() {
   const { overview, loading, getInstructorOverview } = useDashboardStore();
   const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" });
   const [isLoading, setIsLoading] = useState(true);
-  const [pdfLoading, setPdfLoading] = useState(null);
 
   // NEW: State for Physical Paper Modal
   const [paperModal, setPaperModal] = useState({
@@ -62,7 +72,6 @@ function InstructorDashboard() {
 
   // NEW: Open Physical Paper Modal
   const openPaperModal = (assessment) => {
-    console.log("OPENING PHYSICAL PAPER MODAL FOR:", assessment.id, assessment.title);
     setPaperModal({
       isOpen: true,
       assessmentId: assessment.id,
@@ -70,39 +79,40 @@ function InstructorDashboard() {
     });
   };
 
+  // ICONS USING react-icons/fa
   const quickActions = [
     {
       title: "Create Assessment",
       description: "Add a new assessment",
-      icon: "Pen",
+      icon: <FaPen className="w-8 h-8" />,
       link: "/instructor/assessments/create",
       color: "bg-blue-500 hover:bg-blue-600",
     },
     {
       title: "Manage Resources",
       description: "Upload or manage resources",
-      icon: "Books",
+      icon: <FaBook className="w-8 h-8" />,
       link: "/instructor/resources",
       color: "bg-green-500 hover:bg-green-600",
     },
     {
       title: "My Assessments",
       description: "View & manage assessments",
-      icon: "School",
+      icon: <FaSchool className="w-8 h-8" />,
       link: "/instructor/assessments",
       color: "bg-purple-500 hover:bg-purple-600",
     },
     {
       title: "Add New Student",
       description: "Register a new student",
-      icon: "Student",
+      icon: <FaUserGraduate className="w-8 h-8" />,
       link: "/instructor/students",
       color: "bg-yellow-500 hover:bg-yellow-600",
     },
     {
       title: "View Analytics",
       description: "Analyze assessment performance",
-      icon: "Chart",
+      icon: <FaChartLine className="w-8 h-8" />,
       link: "/instructor/assessments/:assessmentId/analytics",
       color: "bg-indigo-500 hover:bg-indigo-600",
     },
@@ -158,9 +168,11 @@ function InstructorDashboard() {
                     <Link
                       key={index}
                       to={action.link}
-                      className={`${action.color} text-white p-6 rounded-lg transition duration-200 block`}
+                      className={`${action.color} text-white p-6 rounded-lg transition duration-200 block text-center`}
                     >
-                      <div className="text-3xl mb-2">{action.icon}</div>
+                      <div className="flex justify-center mb-2">
+                        {action.icon}
+                      </div>
                       <h3 className="font-semibold text-lg mb-1">{action.title}</h3>
                       <p className="text-sm opacity-90">{action.description}</p>
                     </Link>
@@ -182,7 +194,7 @@ function InstructorDashboard() {
               <CardContent>
                 {!assessments || assessments.length === 0 ? (
                   <div className="text-center py-8">
-                    <div className="text-4xl mb-2">Pen</div>
+                    <FaPen className="text-6xl text-gray-400 mx-auto mb-4" />
                     <h3 className="text-lg font-medium text-gray-900 mb-2">No Assessments Yet</h3>
                     <p className="text-gray-600 mb-4">Create your first assessment to get started.</p>
                     <Link

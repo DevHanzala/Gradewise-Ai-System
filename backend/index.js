@@ -1,6 +1,8 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import { createServer } from "http"; // <-- NEW
+import { Server } from "socket.io";   // <-- NEW
 import { connectDB } from "./DB/db.js";
 import { init as initAssessmentModel } from "./models/assessmentModel.js";
 import { init as initResourceModel } from "./models/resourceModel.js";
@@ -12,8 +14,6 @@ import studentAnalyticsRoutes from "./routes/studentAnalyticsRoutes.js";
 import takingRoutes from "./routes/takingRoutes.js";
 import instructorAssessmentAnalyticsRoutes from "./routes/instructorAssessmentAnalyticsRoutes.js";
 import { errorHandler, notFound } from "./middleware/errorMiddleware.js";
-// REMOVED: import fs from "fs/promises";
-// REMOVED: import path from "path"; → not needed anymore
 
 dotenv.config({ path: new URL('.env', import.meta.url).pathname });
 console.log("GEMINI_CREATION_API_KEY loaded:", process.env.GEMINI_CREATION_API_KEY ? "Yes" : "No");
@@ -21,21 +21,50 @@ console.log("GEMINI_CREATION_API_KEY loaded:", process.env.GEMINI_CREATION_API_K
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// REMOVED: ensureUploadsDir function — no disk, no folder needed
+// NEW: HTTP + Socket.IO Server
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: {
+    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    credentials: true,
+  },
+});
+
+// NEW: Make `io` available in routes via `req.app`
+app.set("io", io);
+
+// NEW: Optional – Track active upload sockets
+const uploadSockets = new Map(); // socketId → userId
+
+io.on("connection", (socket) => {
+  console.log(`WebSocket connected: ${socket.id}`);
+
+  // Optional: Authenticate socket if needed
+  socket.on("register-upload", (userId) => {
+    uploadSockets.set(socket.id, userId);
+    console.log(`Upload socket registered: ${socket.id} → user ${userId}`);
+  });
+
+  socket.on("disconnect", () => {
+    uploadSockets.delete(socket.id);
+    console.log(`WebSocket disconnected: ${socket.id}`);
+  });
+});
 
 // Connect to database and initialize tables
 const startServer = async () => {
   try {
-    await connectDB(); // Connect to database
-    await initResourceModel(); // Initialize resources and resource_chunks
-    await initAssessmentModel(); // Initialize assessments, question_blocks, etc.
-    // REMOVED: await ensureUploadsDir(); → no disk usage
+    await connectDB();
+    await initResourceModel();
+    await initAssessmentModel();
 
     console.log(`Server running on port ${PORT}`);
     console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
     console.log(`Frontend URL: ${process.env.FRONTEND_URL || "http://localhost:5173"}`);
     console.log(`API Health Check: http://localhost:${PORT}/api/health`);
-    app.listen(PORT);
+
+    // CHANGED: Use httpServer instead of app.listen
+    httpServer.listen(PORT);
   } catch (error) {
     console.error("Failed to start server:", error);
     process.exit(1);

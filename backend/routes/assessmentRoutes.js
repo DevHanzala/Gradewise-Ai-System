@@ -1,6 +1,5 @@
 import express from 'express';
 import multer from 'multer';
-import path from 'path';
 import {
   createAssessment,
   storeQuestionBlocks,
@@ -23,7 +22,7 @@ import {
 
 const router = express.Router();
 
-// CHANGE 1: Use memoryStorage — NO DISK
+// Multer: In-memory storage (NO DISK)
 const upload = multer({
   storage: multer.memoryStorage(),
   fileFilter: (req, file, cb) => {
@@ -42,7 +41,22 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
 });
 
+// Helper: Get WebSocket from request
+const getSocket = (req) => {
+  const io = req.app.get('io');
+  const socketId = req.body.socketId;
+  return socketId ? io.sockets.sockets.get(socketId) : null;
+};
+
+// Helper: Emit progress
+const emitProgress = (socket, percent, message) => {
+  if (socket) {
+    socket.emit('assessment-progress', { percent, message });
+  }
+};
+
 const createAssessmentHandler = async (req, res) => {
+  const socket = getSocket(req);
   try {
     let {
       title,
@@ -50,6 +64,7 @@ const createAssessmentHandler = async (req, res) => {
       externalLinks = '[]',
       question_blocks = '[]',
       selected_resources = '[]',
+      socketId, // Sent from frontend
     } = req.body;
     const instructor_id = req.user.id;
     const files = req.files || [];
@@ -59,11 +74,15 @@ const createAssessmentHandler = async (req, res) => {
       question_blocks = JSON.parse(question_blocks);
       selected_resources = JSON.parse(selected_resources);
     } catch (error) {
-      console.error('Parsing error:', error.message, { title, prompt, externalLinks, question_blocks, selected_resources });
+      console.error('Parsing error:', error.message);
       return res.status(400).json({ success: false, message: 'Invalid data format in request' });
     }
 
-    console.log(`Creating  Creating assessment for instructor ${instructor_id}`, { title, prompt, externalLinks, question_blocks, selected_resources, files: files.map(f => f.originalname) });
+    console.log(`Creating assessment for instructor ${instructor_id}`, {
+      title,
+      prompt,
+      files: files.map(f => f.originalname)
+    });
 
     if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
       return res.status(400).json({ success: false, message: 'Prompt is required and must be a non-empty string' });
@@ -73,7 +92,7 @@ const createAssessmentHandler = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Title must be a non-empty string if provided' });
     }
 
-    // Validate question_blocks if provided
+    // Validate question_blocks
     if (question_blocks && Array.isArray(question_blocks) && question_blocks.length > 0) {
       for (const block of question_blocks) {
         if (!block.question_count || block.question_count < 1) {
@@ -105,22 +124,29 @@ const createAssessmentHandler = async (req, res) => {
     };
 
     console.log('Assessment data sent to model:', assessmentData);
-
     const newAssessment = await createAssessment(assessmentData);
+    emitProgress(socket, 20, 'Assessment created');
 
     if (question_blocks && Array.isArray(question_blocks) && question_blocks.length > 0) {
       console.log('Question blocks sent to store:', { assessmentId: newAssessment.id, question_blocks, instructor_id });
       await storeQuestionBlocks(newAssessment.id, question_blocks, instructor_id);
+      emitProgress(socket, 30, 'Question blocks saved');
     }
 
     const uploadedResources = [];
     if (files && files.length > 0) {
-      for (const file of files) {
-        // CHANGE 2: Use file.buffer instead of file.path
-        const text = await extractTextFromFile(file.buffer, file.mimetype);
-        const chunks = chunkText(text, 500);
+      const totalFiles = files.length;
+      let processed = 0;
 
-        // CHANGE 3: Do NOT save file_path — it's in memory
+      for (const file of files) {
+        const fileProgressStart = 35 + (processed / totalFiles) * 25;
+        emitProgress(socket, fileProgressStart, `Processing: ${file.originalname}`);
+
+        // Pass socket to text processor
+        const text = await extractTextFromFile(file.buffer, file.mimetype, { socket, totalFiles, currentFile: processed + 1 });
+        const chunks = chunkText(text, 500);
+        emitProgress(socket, fileProgressStart + 25, `Chunked into ${chunks.length} parts`);
+
         const resourceData = {
           name: file.originalname,
           file_type: file.mimetype,
@@ -128,19 +154,25 @@ const createAssessmentHandler = async (req, res) => {
           content_type: 'file',
           visibility: 'private',
           uploaded_by: instructor_id,
-          // file_path REMOVED — not needed
         };
         const resource = await createResource(resourceData);
 
         for (let i = 0; i < chunks.length; i++) {
           const chunk = chunks[i];
-          const embedding = await generateEmbedding(chunk);
+          const embedding = await generateEmbedding(chunk, {
+            socket,
+            totalChunks: chunks.length,
+            currentChunk: i + 1,
+            fileIndex: processed + 1,
+            totalFiles
+          });
           await storeResourceChunk(resource.id, chunk, embedding, { chunk_index: i });
         }
 
         uploadedResources.push(resource.id);
         await linkResourceToAssessment(newAssessment.id, resource.id);
-        console.log(`Linked file resource: ${resource.id} to assessment ${newAssessment.id}`);
+        processed++;
+        emitProgress(socket, 70 + (processed / totalFiles) * 20, `File ${processed}/${totalFiles} saved`);
       }
     }
 
@@ -153,8 +185,10 @@ const createAssessmentHandler = async (req, res) => {
           console.warn(`Warning: Skipping invalid resourceId: ${resourceId}`);
         }
       }
+      emitProgress(socket, 95, 'Linked existing resources');
     }
 
+    emitProgress(socket, 100, 'Assessment ready!');
     console.log(`Assessment created: ID=${newAssessment.id}`);
     res.status(201).json({
       success: true,
@@ -163,6 +197,7 @@ const createAssessmentHandler = async (req, res) => {
     });
   } catch (error) {
     console.error('Create assessment error:', error);
+    emitProgress(socket, 0, 'Error occurred');
     res.status(500).json({ success: false, message: error.message || 'Internal server error' });
   }
 };
