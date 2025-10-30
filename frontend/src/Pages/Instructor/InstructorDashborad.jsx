@@ -10,7 +10,10 @@ import Navbar from "../../components/Navbar.jsx";
 import Footer from "../../components/Footer.jsx";
 import toast from "react-hot-toast";
 import axios from "axios";
-import { FaEye, FaEdit, FaTrash, FaChartBar, FaFilePdf } from "react-icons/fa"; // Import icons
+import { FaEye, FaEdit, FaTrash, FaChartBar, FaFilePdf } from "react-icons/fa";
+
+// NEW: Import Physical Paper Modal
+import PhysicalPaperModal from "../../components/PhysicalPaperModal.jsx";
 
 function InstructorDashboard() {
   const navigate = useNavigate();
@@ -19,7 +22,14 @@ function InstructorDashboard() {
   const { overview, loading, getInstructorOverview } = useDashboardStore();
   const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" });
   const [isLoading, setIsLoading] = useState(true);
-  const [pdfLoading, setPdfLoading] = useState(null); // Track loading state per assessment
+  const [pdfLoading, setPdfLoading] = useState(null);
+
+  // NEW: State for Physical Paper Modal
+  const [paperModal, setPaperModal] = useState({
+    isOpen: false,
+    assessmentId: null,
+    title: "",
+  });
 
   useEffect(() => {
     const fetchData = async () => {
@@ -30,7 +40,7 @@ function InstructorDashboard() {
           getInstructorOverview(),
         ]);
       } catch (error) {
-        console.error("❌ Failed to fetch dashboard data:", error);
+        console.error("Failed to fetch dashboard data:", error);
         const errorMessage = error.response?.data?.message || error.message || "Failed to fetch dashboard data. Please try again.";
         setModal({ isOpen: true, type: "error", title: "Error", message: errorMessage });
         toast.error(errorMessage);
@@ -50,78 +60,49 @@ function InstructorDashboard() {
     toast[type === "success" ? "success" : "error"](message);
   };
 
-  const handlePhysicalPaper = async (assessmentId) => {
-    setPdfLoading(assessmentId); // Start loading for this assessment
-    try {
-      const token = localStorage.getItem("token");
-      if (!token) throw new Error("No authentication token found");
-
-      const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
-      const response = await axios.get(`${API_URL}/taking/assessments/${assessmentId}/print`, { // Updated path
-        headers: { Authorization: `Bearer ${token}` },
-        responseType: "blob", // Expect binary data (PDF)
-      });
-
-      // Create a temporary blob and store in local storage
-      const pdfBlob = new Blob([response.data], { type: "application/pdf" });
-      const pdfUrl = URL.createObjectURL(pdfBlob);
-      localStorage.setItem(`physicalPaper_${assessmentId}`, pdfUrl);
-
-      // Trigger download
-      const link = document.createElement("a");
-      link.href = pdfUrl;
-      link.download = `assessment_${assessmentId}_physical_paper.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      // Clean up local storage after download
-      URL.revokeObjectURL(pdfUrl);
-      localStorage.removeItem(`physicalPaper_${assessmentId}`);
-
-      toast.success("PDF downloaded successfully!");
-    } catch (error) {
-      console.error("❌ Failed to generate physical paper:", error);
-      const errorMessage = error.response?.data?.message || error.message || "Failed to generate physical paper. Please try again.";
-      toast.error(errorMessage);
-    } finally {
-      setPdfLoading(null); // Stop loading
-    }
+  // NEW: Open Physical Paper Modal
+  const openPaperModal = (assessment) => {
+    console.log("OPENING PHYSICAL PAPER MODAL FOR:", assessment.id, assessment.title);
+    setPaperModal({
+      isOpen: true,
+      assessmentId: assessment.id,
+      title: assessment.title,
+    });
   };
 
   const quickActions = [
     {
       title: "Create Assessment",
       description: "Add a new assessment",
-      icon: "📝",
+      icon: "Pen",
       link: "/instructor/assessments/create",
       color: "bg-blue-500 hover:bg-blue-600",
     },
     {
       title: "Manage Resources",
       description: "Upload or manage resources",
-      icon: "📚",
+      icon: "Books",
       link: "/instructor/resources",
       color: "bg-green-500 hover:bg-green-600",
     },
     {
       title: "My Assessments",
       description: "View & manage assessments",
-      icon: "🏫",
+      icon: "School",
       link: "/instructor/assessments",
       color: "bg-purple-500 hover:bg-purple-600",
     },
     {
       title: "Add New Student",
       description: "Register a new student",
-      icon: "👩‍🎓",
+      icon: "Student",
       link: "/instructor/students",
       color: "bg-yellow-500 hover:bg-yellow-600",
     },
     {
       title: "View Analytics",
       description: "Analyze assessment performance",
-      icon: "📊",
+      icon: "Chart",
       link: "/instructor/assessments/:assessmentId/analytics",
       color: "bg-indigo-500 hover:bg-indigo-600",
     },
@@ -194,14 +175,14 @@ function InstructorDashboard() {
                 <div className="flex justify-between items-center">
                   <h2 className="text-xl font-semibold text-gray-900">Recent Assessments</h2>
                   <Link to="/instructor/assessments" className="text-blue-600 hover:text-blue-800">
-                    View All →
+                    View All
                   </Link>
                 </div>
               </CardHeader>
               <CardContent>
                 {!assessments || assessments.length === 0 ? (
                   <div className="text-center py-8">
-                    <div className="text-4xl mb-4">📝</div>
+                    <div className="text-4xl mb-2">Pen</div>
                     <h3 className="text-lg font-medium text-gray-900 mb-2">No Assessments Yet</h3>
                     <p className="text-gray-600 mb-4">Create your first assessment to get started.</p>
                     <Link
@@ -216,10 +197,7 @@ function InstructorDashboard() {
                     <table className="min-w-full divide-y divide-gray-300">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th
-                            scope="col"
-                            className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6"
-                          >
+                          <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">
                             Assessment Title
                           </th>
                           <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
@@ -240,36 +218,17 @@ function InstructorDashboard() {
                               {new Date(assessment.created_at).toLocaleDateString()}
                             </td>
                             <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6 flex justify-end space-x-4">
-                              {/* View - Always Show */}
-                              <Link
-                                to={`/instructor/assessments/${assessment.id}`}
-                                className="text-blue-600 hover:text-blue-900 flex items-center"
-                                onClick={() => console.log(`🔗 Navigating to assessment ID: ${assessment.id}`)}
-                              >
+                              <Link to={`/instructor/assessments/${assessment.id}`} className="text-blue-600 hover:text-blue-900 flex items-center">
                                 <FaEye className="mr-1" /> <span className="hidden sm:inline">View</span>
                               </Link>
-
-                              {/* Enroll - Always Show */}
-                              <Link
-                                to={`/instructor/assessments/${assessment.id}/enroll`}
-                                className="text-green-600 hover:text-green-900 flex items-center"
-                                onClick={() => console.log(`🔗 Navigating to enroll for assessment ID: ${assessment.id}`)}
-                              >
+                              <Link to={`/instructor/assessments/${assessment.id}/enroll`} className="text-green-600 hover:text-green-900 flex items-center">
                                 <FaFilePdf className="mr-1" /> <span className="hidden sm:inline">Enroll</span>
                               </Link>
-
-                              {/* Edit - Hide if executed */}
                               {!assessment.is_executed && (
-                                <Link
-                                  to={`/instructor/assessments/${assessment.id}/edit`}
-                                  className="text-yellow-600 hover:text-yellow-900 flex items-center"
-                                  onClick={() => console.log(`🔗 Navigating to edit for assessment ID: ${assessment.id}`)}
-                                >
+                                <Link to={`/instructor/assessments/${assessment.id}/edit`} className="text-yellow-600 hover:text-yellow-900 flex items-center">
                                   <FaEdit className="mr-1" /> <span className="hidden sm:inline">Edit</span>
                                 </Link>
                               )}
-
-                              {/* Delete - Hide if executed */}
                               {!assessment.is_executed && (
                                 <button
                                   onClick={() => {
@@ -286,31 +245,19 @@ function InstructorDashboard() {
                                   <FaTrash className="mr-1" /> <span className="hidden sm:inline">Delete</span>
                                 </button>
                               )}
-
-                              {/* Analytics - Show only if executed */}
                               {assessment.is_executed && (
-                                <Link
-                                  to={`/instructor/assessments/${assessment.id}/analytics`}
-                                  className="text-indigo-600 hover:text-indigo-900 flex items-center"
-                                  onClick={() => console.log(`🔗 Navigating to analytics for assessment ID: ${assessment.id}`)}
-                                >
+                                <Link to={`/instructor/assessments/${assessment.id}/analytics`} className="text-indigo-600 hover:text-indigo-900 flex items-center">
                                   <FaChartBar className="mr-1" /> <span className="hidden sm:inline">Analytics</span>
                                 </Link>
                               )}
 
-                              {/* Physical Paper - Always Show */}
+                              {/* Physical Paper Button */}
                               <button
-                                onClick={() => handlePhysicalPaper(assessment.id)}
+                                onClick={() => openPaperModal(assessment)}
                                 className="text-orange-600 hover:text-orange-900 flex items-center"
-                                disabled={pdfLoading === assessment.id}
                               >
-                                {pdfLoading === assessment.id ? (
-                                  <LoadingSpinner size="sm" />
-                                ) : (
-                                  <>
-                                    <FaFilePdf className="mr-1" /> <span className="hidden sm:inline">Physical Paper</span>
-                                  </>
-                                )}
+                                <FaFilePdf className="mr-1" />
+                                <span className="hidden sm:inline">Physical Paper</span>
                               </button>
                             </td>
                           </tr>
@@ -324,7 +271,18 @@ function InstructorDashboard() {
           </>
         )}
       </div>
+
       <Footer />
+
+      {/* NEW: Physical Paper Modal */}
+      <PhysicalPaperModal
+        isOpen={paperModal.isOpen}
+        onClose={() => setPaperModal({ ...paperModal, isOpen: false })}
+        assessmentId={paperModal.assessmentId}
+        assessmentTitle={paperModal.title}
+      />
+
+      {/* Existing Modal */}
       <Modal
         isOpen={modal.isOpen}
         onClose={() => setModal({ ...modal, isOpen: false })}
