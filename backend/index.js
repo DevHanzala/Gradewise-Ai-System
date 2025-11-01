@@ -1,3 +1,4 @@
+// server.js
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -15,8 +16,13 @@ import takingRoutes from "./routes/takingRoutes.js";
 import instructorAssessmentAnalyticsRoutes from "./routes/instructorAssessmentAnalyticsRoutes.js";
 import { errorHandler, notFound } from "./middleware/errorMiddleware.js";
 
-// FIXED: Simple & safe .env loading
-dotenv.config(); // ← AUTO FINDS .env IN ROOT
+// === GLOBALS FOR LOGGING (MochaHost Debug) ===
+global.startupLogs = [];
+global.recentErrors = [];
+global.dbConnected = false;
+
+// FIXED: .env loading
+dotenv.config();
 
 console.log("GEMINI_CREATION_API_KEY loaded:", process.env.GEMINI_CREATION_API_KEY ? "Yes" : "No");
 
@@ -51,26 +57,49 @@ io.on("connection", (socket) => {
   });
 });
 
-// Start server with DB init
+// === START SERVER WITH LOGGING ===
 const startServer = async () => {
   try {
+    global.startupLogs.push(`[INIT] Starting server on port ${PORT}...`);
+    global.startupLogs.push(`[ENV] NODE_ENV = ${process.env.NODE_ENV || "development"}`);
+    global.startupLogs.push(`[ENV] FRONTEND_URL = ${process.env.FRONTEND_URL || "http://localhost:5173"}`);
+
+    global.startupLogs.push("[DB] Connecting to database...");
     await connectDB();
+    global.dbConnected = true;
+    global.startupLogs.push("[DB] Connected successfully!");
+
+    global.startupLogs.push("[MODEL] Initializing Resource Model...");
     await initResourceModel();
+    global.startupLogs.push("[MODEL] Resource Model initialized!");
+
+    global.startupLogs.push("[MODEL] Initializing Assessment Model...");
     await initAssessmentModel();
+    global.startupLogs.push("[MODEL] Assessment Model initialized!");
 
-    console.log(`Server running on port ${PORT}`);
-    console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
-    console.log(`Frontend URL: ${process.env.FRONTEND_URL || "http://localhost:5173"}`);
-    console.log(`API Health Check: http://localhost:${PORT}/api/health`);
+    global.startupLogs.push(`[SERVER] Listening on 0.0.0.0:${PORT}...`);
 
-    httpServer.listen(PORT);
+    httpServer.listen(PORT, "0.0.0.0", () => {
+      global.startupLogs.push(`[LIVE] Server is LIVE at http://0.0.0.0:${PORT}`);
+      console.log(`Server running on port ${PORT}`);
+      console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
+      console.log(`Frontend URL: ${process.env.FRONTEND_URL || "http://localhost:5173"}`);
+      console.log(`Health: http://localhost:${PORT}/api/health`);
+    });
   } catch (error) {
-    console.error("Failed to start server:", error);
+    const msg = `[FATAL] STARTUP FAILED: ${error.message}`;
+    console.error(msg);
+    global.startupLogs.push(msg);
+    global.recentErrors.push({
+      error: error.message,
+      stack: error.stack,
+      time: new Date().toISOString(),
+    });
     process.exit(1);
   }
 };
 
-// Middleware
+// === MIDDLEWARE ===
 app.use(
   cors({
     origin: process.env.FRONTEND_URL || "http://localhost:5173",
@@ -86,7 +115,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Routes
+// === ROUTES ===
 app.use("/api/auth", authRoutes);
 app.use("/api/assessments", assessmentRoutes);
 app.use("/api/resources", resourceRoutes);
@@ -106,31 +135,63 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// NEW: Root route to avoid "Route / not found"
+// === DEBUG LOGS ENDPOINT (MochaHost) ===
+app.get("/api/logs", (req, res) => {
+  res.json({
+    success: true,
+    data: {
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || "development",
+      port: PORT,
+      frontendUrl: process.env.FRONTEND_URL || "http://localhost:5173",
+      geminiKeyLoaded: !!process.env.GEMINI_CREATION_API_KEY,
+      dbConnected: global.dbConnected,
+      uptime: `${process.uptime().toFixed(2)} seconds`,
+      startupLogs: global.startupLogs,
+      recentErrors: global.recentErrors.slice(-10), // Last 10 errors
+    },
+  });
+});
+
+// Root welcome
 app.get("/", (req, res) => {
   res.json({
     success: true,
     message: "Welcome to Gradewise AI Backend",
     health: "/api/health",
+    logs: "/api/logs",
     docs: "Use /api/* for all endpoints",
   });
 });
 
-// 404 & Error (must be AFTER all routes)
+// 404 & Error (must be last)
 app.use(notFound);
 app.use(errorHandler);
 
-// Start
-startServer();
-
-// Unhandled errors
+// === ENHANCED ERROR LOGGING ===
 process.on("unhandledRejection", (err) => {
-  console.error("Unhandled Rejection:", err.message);
+  const msg = `Unhandled Rejection: ${err.message}`;
+  console.error(msg);
+  global.recentErrors.push({
+    error: err.message,
+    stack: err.stack,
+    time: new Date().toISOString(),
+  });
   process.exit(1);
 });
+
 process.on("uncaughtException", (err) => {
-  console.error("Uncaught Exception:", err.message);
+  const msg = `Uncaught Exception: ${err.message}`;
+  console.error(msg);
+  global.recentErrors.push({
+    error: err.message,
+    stack: err.stack,
+    time: new Date().toISOString(),
+  });
   process.exit(1);
 });
+
+// === START ===
+startServer();
 
 export default app;
