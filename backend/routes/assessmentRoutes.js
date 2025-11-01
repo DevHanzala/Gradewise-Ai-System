@@ -22,39 +22,34 @@ import {
 
 const router = express.Router();
 
-// Multer: In-memory storage (NO DISK)
+// MULTER: IN-MEMORY ONLY → NO DISK, NO FOLDER
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage: multer.memoryStorage(), // ← NO FILES SAVED TO DISK
   fileFilter: (req, file, cb) => {
-    const allowedTypes = [
+    const allowed = [
       'application/pdf',
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'text/plain',
     ];
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Invalid file type. Only PDF, DOC, DOCX, TXT files are allowed.'), false);
-    }
+    allowed.includes(file.mimetype) ? cb(null, true) : cb(new Error('Invalid file type'), false);
   },
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
 });
 
-// Helper: Get WebSocket from request
+// Get socket from request
 const getSocket = (req) => {
   const io = req.app.get('io');
   const socketId = req.body.socketId;
   return socketId ? io.sockets.sockets.get(socketId) : null;
 };
 
-// Helper: Emit progress
+// Emit progress
 const emitProgress = (socket, percent, message) => {
-  if (socket) {
-    socket.emit('assessment-progress', { percent, message });
-  }
+  socket?.emit('assessment-progress', { percent, message });
 };
 
+// CREATE ASSESSMENT (FULLY IN-MEMORY)
 const createAssessmentHandler = async (req, res) => {
   const socket = getSocket(req);
   try {
@@ -64,236 +59,142 @@ const createAssessmentHandler = async (req, res) => {
       externalLinks = '[]',
       question_blocks = '[]',
       selected_resources = '[]',
-      socketId, // Sent from frontend
     } = req.body;
     const instructor_id = req.user.id;
     const files = req.files || [];
 
+    // Parse JSON strings
     try {
       externalLinks = JSON.parse(externalLinks);
       question_blocks = JSON.parse(question_blocks);
       selected_resources = JSON.parse(selected_resources);
-    } catch (error) {
-      console.error('Parsing error:', error.message);
-      return res.status(400).json({ success: false, message: 'Invalid data format in request' });
+    } catch {
+      return res.status(400).json({ success: false, message: 'Invalid JSON in request' });
     }
 
-    console.log(`Creating assessment for instructor ${instructor_id}`, {
-      title,
-      prompt,
-      files: files.map(f => f.originalname)
-    });
+    if (!prompt?.trim()) return res.status(400).json({ success: false, message: 'Prompt required' });
+    if (title && !title.trim()) return res.status(400).json({ success: false, message: 'Title must be valid' });
 
-    if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
-      return res.status(400).json({ success: false, message: 'Prompt is required and must be a non-empty string' });
-    }
-
-    if (title && typeof title !== 'string' || !title.trim()) {
-      return res.status(400).json({ success: false, message: 'Title must be a non-empty string if provided' });
-    }
-
-    // Validate question_blocks
-    if (question_blocks && Array.isArray(question_blocks) && question_blocks.length > 0) {
-      for (const block of question_blocks) {
-        if (!block.question_count || block.question_count < 1) {
-          return res.status(400).json({ success: false, message: 'Question count must be at least 1 for each block' });
-        }
-        if (!block.duration_per_question || block.duration_per_question < 30) {
-          return res.status(400).json({ success: false, message: 'Duration per question must be at least 30 seconds' });
-        }
-        if (block.question_type === 'multiple_choice' && (!block.num_options || block.num_options < 2)) {
-          return res.status(400).json({ success: false, message: 'Multiple choice questions must have at least 2 options' });
-        }
-        if (block.question_type === 'matching') {
-          if (!block.num_first_side || block.num_first_side < 2) {
-            return res.status(400).json({ success: false, message: 'Matching questions must have at least 2 first-side options' });
-          }
-          if (!block.num_second_side || block.num_second_side < 2) {
-            return res.status(400).json({ success: false, message: 'Matching questions must have at least 2 second-side options' });
-          }
+    // Validate question blocks
+    if (question_blocks.length > 0) {
+      for (const b of question_blocks) {
+        if (b.question_count < 1) return res.status(400).json({ success: false, message: 'Question count ≥ 1' });
+        if (b.duration_per_question < 30) return res.status(400).json({ success: false, message: 'Duration ≥ 30s' });
+        if (b.question_type === 'multiple_choice' && b.num_options < 2) return res.status(400).json({ success: false, message: 'MCQ needs ≥ 2 options' });
+        if (b.question_type === 'matching' && (b.num_first_side < 2 || b.num_second_side < 2)) {
+          return res.status(400).json({ success: false, message: 'Matching needs ≥ 2 per side' });
         }
       }
     }
 
     const assessmentData = {
-      title: title || null,
+      title: title?.trim() || null,
       prompt: prompt.trim(),
-      external_links: externalLinks && Array.isArray(externalLinks) ? externalLinks.filter(link => link && link.trim()) : null,
+      external_links: externalLinks.filter(l => l?.trim()),
       instructor_id,
       is_executed: false,
     };
 
-    console.log('Assessment data sent to model:', assessmentData);
     const newAssessment = await createAssessment(assessmentData);
     emitProgress(socket, 20, 'Assessment created');
 
-    if (question_blocks && Array.isArray(question_blocks) && question_blocks.length > 0) {
-      console.log('Question blocks sent to store:', { assessmentId: newAssessment.id, question_blocks, instructor_id });
+    if (question_blocks.length > 0) {
       await storeQuestionBlocks(newAssessment.id, question_blocks, instructor_id);
-      emitProgress(socket, 30, 'Question blocks saved');
+      emitProgress(socket, 30, 'Blocks saved');
     }
 
     const uploadedResources = [];
-    if (files && files.length > 0) {
+    if (files.length > 0) {
       const totalFiles = files.length;
       let processed = 0;
 
       for (const file of files) {
-        const fileProgressStart = 35 + (processed / totalFiles) * 25;
-        emitProgress(socket, fileProgressStart, `Processing: ${file.originalname}`);
+        const baseProgress = 35 + (processed / totalFiles) * 25;
+        emitProgress(socket, baseProgress, `Processing: ${file.originalname}`);
 
-        // Pass socket to text processor
         const text = await extractTextFromFile(file.buffer, file.mimetype, { socket, totalFiles, currentFile: processed + 1 });
         const chunks = chunkText(text, 500);
-        emitProgress(socket, fileProgressStart + 25, `Chunked into ${chunks.length} parts`);
+        emitProgress(socket, baseProgress + 25, `Chunked: ${chunks.length}`);
 
-        const resourceData = {
+        const resource = await createResource({
           name: file.originalname,
           file_type: file.mimetype,
           file_size: file.size,
           content_type: 'file',
           visibility: 'private',
           uploaded_by: instructor_id,
-        };
-        const resource = await createResource(resourceData);
+        });
 
         for (let i = 0; i < chunks.length; i++) {
-          const chunk = chunks[i];
-          const embedding = await generateEmbedding(chunk, {
+          const embedding = await generateEmbedding(chunks[i], {
             socket,
             totalChunks: chunks.length,
             currentChunk: i + 1,
             fileIndex: processed + 1,
             totalFiles
           });
-          await storeResourceChunk(resource.id, chunk, embedding, { chunk_index: i });
+          await storeResourceChunk(resource.id, chunks[i], embedding, { chunk_index: i });
         }
 
-        uploadedResources.push(resource.id);
         await linkResourceToAssessment(newAssessment.id, resource.id);
+        uploadedResources.push(resource.id);
         processed++;
-        emitProgress(socket, 70 + (processed / totalFiles) * 20, `File ${processed}/${totalFiles} saved`);
+        emitProgress(socket, 70 + (processed / totalFiles) * 20, `Saved: ${processed}/${totalFiles}`);
       }
     }
 
-    if (selected_resources && Array.isArray(selected_resources)) {
-      for (const resourceId of selected_resources) {
-        if (resourceId && !isNaN(parseInt(resourceId))) {
-          await linkResourceToAssessment(newAssessment.id, parseInt(resourceId));
-          console.log(`Linked selected resource: ${resourceId} to assessment ${newAssessment.id}`);
-        } else {
-          console.warn(`Warning: Skipping invalid resourceId: ${resourceId}`);
+    if (selected_resources.length > 0) {
+      for (const id of selected_resources) {
+        if (!isNaN(parseInt(id))) {
+          await linkResourceToAssessment(newAssessment.id, parseInt(id));
         }
       }
-      emitProgress(socket, 95, 'Linked existing resources');
+      emitProgress(socket, 95, 'Resources linked');
     }
 
-    emitProgress(socket, 100, 'Assessment ready!');
-    console.log(`Assessment created: ID=${newAssessment.id}`);
-    res.status(201).json({
-      success: true,
-      message: 'Assessment created successfully',
-      data: newAssessment,
-    });
+    emitProgress(socket, 100, 'Done!');
+    res.status(201).json({ success: true, message: 'Assessment created', data: newAssessment });
   } catch (error) {
     console.error('Create assessment error:', error);
-    emitProgress(socket, 0, 'Error occurred');
-    res.status(500).json({ success: false, message: error.message || 'Internal server error' });
+    emitProgress(socket, 0, 'Error');
+    res.status(500).json({ success: false, message: error.message || 'Server error' });
   }
 };
 
-// === ROUTES (UNCHANGED) ===
+// ROUTES
 router.post('/', protect, authorizeRoles('instructor', 'admin', 'super_admin'), upload.array('new_files'), createAssessmentHandler);
 
 router.get('/', protect, authorizeRoles('instructor', 'admin', 'super_admin'), async (req, res) => {
-  try {
-    const assessments = await getAssessmentsByInstructor(req.user.id);
-    res.status(200).json({ success: true, data: assessments });
-  } catch (error) {
-    console.error('Error fetching assessments:', error);
-    res.status(500).json({ success: false, message: error.message || 'Internal server error' });
-  }
+  const assessments = await getAssessmentsByInstructor(req.user.id);
+  res.json({ success: true, data: assessments });
 });
 
 router.get('/instructor', protect, authorizeRoles('instructor', 'admin', 'super_admin'), async (req, res) => {
-  try {
-    const assessments = await getAssessmentsByInstructor(req.user.id);
-    res.status(200).json({ success: true, data: assessments });
-  } catch (error) {
-    console.error('Error fetching assessments:', error);
-    res.status(500).json({ success: false, message: error.message || 'Internal server error' });
-  }
+  const assessments = await getAssessmentsByInstructor(req.user.id);
+  res.json({ success: true, data: assessments });
 });
 
 router.get('/:id', protect, async (req, res) => {
-  try {
-    const assessment = await getAssessmentById(req.params.id, req.user.id, req.user.role);
-    if (!assessment) {
-      return res.status(404).json({ success: false, message: 'Assessment not found or access denied' });
-    }
-    res.status(200).json({ success: true, data: assessment });
-  } catch (error) {
-    console.error('Error fetching assessment:', error);
-    res.status(500).json({ success: false, message: error.message || 'Internal server error' });
-  }
+  const assessment = await getAssessmentById(req.params.id, req.user.id, req.user.role);
+  assessment ? res.json({ success: true, data: assessment }) : res.status(404).json({ success: false, message: 'Not found' });
 });
 
 router.put('/:id', protect, authorizeRoles('instructor', 'admin', 'super_admin'), async (req, res) => {
-  try {
-    const assessment = await updateAssessment(req.params.id, req.body);
-    res.status(200).json({ success: true, data: assessment });
-  } catch (error) {
-    console.error('Error updating assessment:', error);
-    res.status(500).json({ success: false, message: error.message || 'Internal server error' });
-  }
+  const assessment = await updateAssessment(req.params.id, req.body);
+  res.json({ success: true, data: assessment });
 });
 
 router.delete('/:id', protect, authorizeRoles('instructor', 'admin', 'super_admin'), async (req, res) => {
-  try {
-    await deleteAssessment(req.params.id);
-    res.status(200).json({ success: true, message: 'Assessment deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting assessment:', error);
-    res.status(500).json({ success: false, message: error.message || 'Internal server error' });
-  }
+  await deleteAssessment(req.params.id);
+  res.json({ success: true, message: 'Deleted' });
 });
 
-router.post('/:id/enroll', protect, authorizeRoles('instructor', 'admin', 'super_admin'), async (req, res) => {
-  try {
-    console.log(`Enroll request payload for assessment ${req.params.id}:`, req.body);
-    await enrollStudentController(req, res);
-  } catch (error) {
-    console.error('Error enrolling student:', error, error.stack);
-    res.status(500).json({ success: false, message: error.message || 'Internal server error' });
-  }
-});
-
-router.delete('/:id/enroll/:studentId', protect, authorizeRoles('instructor', 'admin', 'super_admin'), async (req, res) => {
-  try {
-    await unenrollStudentController(req, res);
-  } catch (error) {
-    console.error('Error unenrolling student:', error, error.stack);
-    res.status(500).json({ success: false, message: error.message || 'Internal server error' });
-  }
-});
-
-router.get('/:id/enrolled-students', protect, authorizeRoles('instructor', 'admin', 'super_admin'), async (req, res) => {
-  try {
-    await getEnrolledStudentsController(req, res);
-  } catch (error) {
-    console.error('Error fetching enrolled students:', error, error.stack);
-    res.status(500).json({ success: false, message: error.message || 'Internal server error' });
-  }
-});
-
+router.post('/:id/enroll', protect, authorizeRoles('instructor', 'admin', 'super_admin'), enrollStudentController);
+router.delete('/:id/enroll/:studentId', protect, authorizeRoles('instructor', 'admin', 'super_admin'), unenrollStudentController);
+router.get('/:id/enrolled-students', protect, authorizeRoles('instructor', 'admin', 'super_admin'), getEnrolledStudentsController);
 router.put('/:id/clear-links', protect, authorizeRoles('instructor', 'admin', 'super_admin'), async (req, res) => {
-  try {
-    const assessment = await clearLinksForAssessment(req.params.id);
-    res.status(200).json({ success: true, data: assessment });
-  } catch (error) {
-    console.error('Error clearing external links:', error);
-    res.status(500).json({ success: false, message: error.message || 'Internal server error' });
-  }
+  const assessment = await clearLinksForAssessment(req.params.id);
+  res.json({ success: true, data: assessment });
 });
 
 export default router;

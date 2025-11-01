@@ -1,12 +1,14 @@
-import { useState } from "react"
-import { Link, useNavigate } from "react-router-dom"
-import { z } from "zod"
-import useAuthStore from "../store/authStore.js"
-import { Card, CardHeader, CardContent } from "../components/ui/Card.jsx"
-import LoadingSpinner from "../components/ui/LoadingSpinner.jsx"
-import Modal from "../components/ui/Modal.jsx"
-import Navbar from "../components/Navbar.jsx"
-import Footer from "../components/Footer.jsx"
+import { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { z } from "zod";
+import useAuthStore from "../store/authStore.js";
+import { Card, CardHeader, CardContent } from "../components/ui/Card.jsx";
+import LoadingSpinner from "../components/ui/LoadingSpinner.jsx";
+import Modal from "../components/ui/Modal.jsx";
+import Navbar from "../components/Navbar.jsx";
+import Footer from "../components/Footer.jsx";
+import toast from "react-hot-toast";
+import { loadRecaptcha, getCaptchaToken } from "../config/captcha.js";
 
 // Zod schema for signup validation
 const signupSchema = z.object({
@@ -19,108 +21,111 @@ const signupSchema = z.object({
       /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
       "Password must contain at least one uppercase letter, one lowercase letter, and one number",
     ),
-})
+});
 
 function Signup() {
-  const navigate = useNavigate()
-  const { signup, googleAuth } = useAuthStore()
+  const navigate = useNavigate();
+  const { signup, googleAuth } = useAuthStore();
 
   const [formData, setFormData] = useState({
     name: "",
     email: "",
     password: "",
-  })
+  });
 
-  const [errors, setErrors] = useState({})
-  const [loading, setLoading] = useState(false)
-  const [googleLoading, setGoogleLoading] = useState(false)
-  const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" })
+  const [errors, setErrors] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" });
+
+  const siteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
+
+  useEffect(() => {
+    if (siteKey) {
+      loadRecaptcha(siteKey).catch(console.error);
+    }
+  }, [siteKey]);
 
   const handleChange = (e) => {
-    const { name, value } = e.target
-    setFormData((prev) => ({ ...prev, [name]: value }))
-    // Clear error when user starts typing
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
     if (errors[name]) {
-      setErrors((prev) => ({ ...prev, [name]: "" }))
+      setErrors((prev) => ({ ...prev, [name]: "" }));
     }
-  }
+  };
 
   const showModal = (type, title, message) => {
-    setModal({ isOpen: true, type, title, message })
-  }
+    setModal({ isOpen: true, type, title, message });
+    toast[type === "success" ? "success" : "error"](message);
+  };
 
   const handleSubmit = async (e) => {
-    e.preventDefault()
-    setLoading(true)
-    setErrors({})
+    e.preventDefault();
+    setLoading(true);
+    setErrors({});
 
     try {
-      // Validate form data
-      signupSchema.parse(formData)
+      signupSchema.parse(formData);
 
-      // Attempt signup
-      const response = await signup(formData)
-      showModal("success", "Registration Successful!", response.message)
+      const captchaToken = await getCaptchaToken(siteKey, "signup");
 
-      // Clear form
-      setFormData({ name: "", email: "", password: "" })
+      const response = await signup({ ...formData, captchaToken });
+      showModal("success", "Registration Successful!", response.message);
 
-      // Redirect to login after a short delay
+      setFormData({ name: "", email: "", password: "" });
+
       setTimeout(() => {
-        navigate("/login")
-      }, 2000)
+        navigate("/login");
+      }, 2000);
     } catch (error) {
-      console.error("Signup error:", error) // Log error for debugging
       if (error instanceof z.ZodError) {
-        // Handle Zod validation errors
-        const fieldErrors = {}
-        error.issues.forEach((err) => { // Use error.issues instead of error.errors
-          fieldErrors[err.path[0]] = err.message
-        })
-        setErrors(fieldErrors)
+        const fieldErrors = {};
+        error.issues.forEach((err) => {
+          fieldErrors[err.path[0]] = err.message;
+        });
+        setErrors(fieldErrors);
       } else {
-        // Handle API errors
-        const errorMessage = error.response?.data?.message || error.message || "Registration failed. Please try again."
-        showModal("error", "Registration Failed", errorMessage)
+        const errorMessage = error.response?.data?.message || error.message || "Registration failed. Please try again.";
+        showModal("error", "Registration Failed", errorMessage);
       }
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const handleGoogleSignup = async () => {
-    setGoogleLoading(true)
+    setGoogleLoading(true);
     try {
-      const user = await googleAuth()
-      showModal("success", "Welcome!", `Successfully signed up with Google! Welcome, ${user.name}!`)
+      const captchaToken = await getCaptchaToken(siteKey, "google_signup");
 
-      // Redirect based on role after a short delay
+      const user = await googleAuth({ captchaToken });
+      showModal("success", "Welcome!", `Successfully signed up with Google! Welcome, ${user.name}!`);
+
       setTimeout(() => {
         switch (user.role) {
           case "super_admin":
-            navigate("/super-admin/dashboard")
-            break
+            navigate("/super-admin/dashboard");
+            break;
           case "admin":
-            navigate("/admin/dashboard")
-            break
+            navigate("/admin/dashboard");
+            break;
           case "instructor":
-            navigate("/instructor/dashboard")
-            break
+            navigate("/instructor/dashboard");
+            break;
           case "student":
-            navigate("/student/dashboard")
-            break
+            navigate("/student/dashboard");
+            break;
           default:
-            navigate("/profile")
+            navigate("/profile");
         }
-      }, 2000)
+      }, 2000);
     } catch (error) {
-      console.error("Google signup error:", error)
-      const errorMessage = error.response?.data?.message || error.message || "Google signup failed. Please try again."
-      showModal("error", "Google Signup Failed", errorMessage)
+      const errorMessage = error.response?.data?.message || error.message || "Google signup failed. Please try again.";
+      showModal("error", "Google Signup Failed", errorMessage);
     } finally {
-      setGoogleLoading(false)
+      setGoogleLoading(false);
     }
-  }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -136,11 +141,10 @@ function Signup() {
           </CardHeader>
 
           <CardContent>
-            {/* Google Signup Button */}
             <button
               onClick={handleGoogleSignup}
               disabled={googleLoading || loading}
-              className="w-full flex items-center justify-center px-4 py-3 border border-gray-300 rounded-md shadow-sm bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed mb-6"
+              className="w-full flex items-center justify-center px-4 py-4 border border-gray-300 rounded-md shadow-sm bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed mb-6"
             >
               {googleLoading ? (
                 <LoadingSpinner size="sm" />
@@ -178,7 +182,6 @@ function Signup() {
               </div>
             </div>
 
-            {/* Manual Signup Form */}
             <form onSubmit={handleSubmit} className="space-y-6">
               <div>
                 <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
@@ -276,7 +279,7 @@ function Signup() {
         {modal.message}
       </Modal>
     </div>
-  )
+  );
 }
 
-export default Signup
+export default Signup;

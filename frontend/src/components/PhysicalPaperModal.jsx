@@ -48,7 +48,7 @@ const PhysicalPaperModal = ({ isOpen, onClose, assessmentId, assessmentTitle }) 
   });
 
   const [loading, setLoading] = useState(false);
-  const [questions, setQuestions] = useState([]);
+  const [questions, setQuestions] = useState([]); // Locked after API
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -60,12 +60,12 @@ const PhysicalPaperModal = ({ isOpen, onClose, assessmentId, assessmentTitle }) 
     return dims[size] || dims.A4;
   };
 
-  // COMMON TEXT WRAPPING FOR PDF
+  // TEXT WRAPPING FOR PDF
   const wrapText = (text, font, size, maxWidth) => {
     const words = text.split(" ");
     let line = "";
     const lines = [];
-    words.forEach(word => {
+    for (const word of words) {
       const test = line + word + " ";
       if (font.widthOfTextAtSize(test, size) > maxWidth && line) {
         lines.push(line.trim());
@@ -73,12 +73,12 @@ const PhysicalPaperModal = ({ isOpen, onClose, assessmentId, assessmentTitle }) 
       } else {
         line = test;
       }
-    });
+    }
     if (line) lines.push(line.trim());
     return lines;
   };
 
-  const generatePDF = async () => {
+  const generatePDF = async (qList) => {
     const pdfDoc = await PDFDocument.create();
     const [w, h] = getPageDims(form.pageSize);
     let page = pdfDoc.addPage([w, h]);
@@ -125,7 +125,7 @@ const PhysicalPaperModal = ({ isOpen, onClose, assessmentId, assessmentTitle }) 
       });
     };
 
-    // HEADER — NO "University:", NO Duration/Total
+    // HEADER
     if (form.instituteName) {
       draw(form.instituteName, headerSize, true, rgb(0,0,0), "center");
       y -= 20;
@@ -157,29 +157,25 @@ const PhysicalPaperModal = ({ isOpen, onClose, assessmentId, assessmentTitle }) 
       page.drawText(form.paperTime, { x: rightX + 45, y: tempY, size: 12, font });
     }
 
-    // NOTES
     if (form.notes.trim()) {
       y -= 20;
       page.drawText("Notes:", { x: margin, y: y, size: 12, font: bold });
       y -= 18;
-      form.notes.split("\n").filter(l => l.trim()).forEach(line => {
-        draw(line.trim(), 11, false);
-      });
+      form.notes.split("\n").filter(l => l.trim()).forEach(line => draw(line.trim(), 11));
     }
 
     y -= 20;
     drawHeaderBorder();
     y -= 30;
 
-    // QUESTIONS — ALWAYS PRINT
-    if (!questions?.length) {
+    // QUESTIONS
+    if (!qList?.length) {
       draw("No questions available.", 12, false, rgb(0.5,0,0));
     } else {
-      questions.forEach((q, i) => {
+      qList.forEach((q, i) => {
         if (y < 200) { page = pdfDoc.addPage([w, h]); y = h - 80; drawHeaderBorder(); y -= 30; }
         draw(`Q${i + 1}. ${q.question_text}`, questionSize, true);
         y -= 10;
-
         if (q.options && Array.isArray(q.options)) {
           q.options.forEach((opt, oi) => {
             if (y < 80) { page = pdfDoc.addPage([w, h]); y = h - 80; drawHeaderBorder(); y -= 30; }
@@ -198,7 +194,7 @@ const PhysicalPaperModal = ({ isOpen, onClose, assessmentId, assessmentTitle }) 
     draw("ANSWER KEY", 20, true, rgb(0,0,0), "center");
     y -= 25;
 
-    questions.forEach((q, i) => {
+    qList.forEach((q, i) => {
       if (y < 80) { page = pdfDoc.addPage([w, h]); y = h - 80; drawHeaderBorder(); y -= 30; }
       const ans = q.correct_answer || "N/A";
       draw(`Q${i + 1}: ${ans}`, 12, false);
@@ -208,13 +204,12 @@ const PhysicalPaperModal = ({ isOpen, onClose, assessmentId, assessmentTitle }) 
     return new Blob([await pdfDoc.save()], { type: "application/pdf" });
   };
 
-  const generateDOCX = async () => {
+  const generateDOCX = async (qList) => {
     const children = [];
-    const hs = Number(form.headerFontSize) * 2 || 36;
-    const qs = Number(form.questionFontSize) * 2 || 24;
-    const os = Number(form.optionFontSize) * 2 || 22;
+    const hs = Math.max(20, Number(form.headerFontSize) * 2);
+    const qs = Math.max(16, Number(form.questionFontSize) * 2);
+    const os = Math.max(14, Number(form.optionFontSize) * 2);
 
-    // HEADER — NO "University:"
     if (form.instituteName) {
       children.push(new Paragraph({
         children: [new TextRun({ text: form.instituteName, bold: true, size: hs })],
@@ -233,18 +228,15 @@ const PhysicalPaperModal = ({ isOpen, onClose, assessmentId, assessmentTitle }) 
 
     const max = Math.max(left.length, right.length);
     for (let i = 0; i < max; i++) {
-      const l = left[i] || "";
-      const r = right[i] || "";
-      const [ll, lv] = l.split(": ");
-      const [rl, rv] = r.split(": ");
-
+      const [ll = "", lv = ""] = (left[i] || "").split(": ");
+      const [rl = "", rv = ""] = (right[i] || "").split(": ");
       children.push(new Paragraph({
         children: [
-          new TextRun({ text: (ll ? `${ll}: ` : ""), bold: true, size: 24 }),
-          new TextRun({ text: lv || "", size: 24 }),
+          new TextRun({ text: ll ? `${ll}: ` : "", bold: true, size: 24 }),
+          new TextRun({ text: lv, size: 24 }),
           new TextRun({ text: " ".repeat(35), size: 24 }),
-          new TextRun({ text: (rl ? `${rl}: ` : ""), bold: true, size: 24 }),
-          new TextRun({ text: rv || "", size: 24 })
+          new TextRun({ text: rl ? `${rl}: ` : "", bold: true, size: 24 }),
+          new TextRun({ text: rv, size: 24 })
         ]
       }));
     }
@@ -262,11 +254,10 @@ const PhysicalPaperModal = ({ isOpen, onClose, assessmentId, assessmentTitle }) 
       spacing: { after: 300 }
     }));
 
-    // QUESTIONS
-    if (!questions?.length) {
+    if (!qList?.length) {
       children.push(new Paragraph({ children: [new TextRun({ text: "No questions available.", italic: true })] }));
     } else {
-      questions.forEach((q, i) => {
+      qList.forEach((q, i) => {
         children.push(new Paragraph({
           children: [new TextRun({ text: `Q${i + 1}. ${q.question_text}`, bold: true, size: qs })],
           spacing: { after: 160 }
@@ -283,7 +274,6 @@ const PhysicalPaperModal = ({ isOpen, onClose, assessmentId, assessmentTitle }) 
       });
     }
 
-    // ANSWER KEY
     children.push(new Paragraph({ children: [new PageBreak()] }));
     children.push(new Paragraph({
       children: [new TextRun({ text: "______________________________________________________________", size: 24 })],
@@ -296,7 +286,7 @@ const PhysicalPaperModal = ({ isOpen, onClose, assessmentId, assessmentTitle }) 
       spacing: { after: 400 }
     }));
 
-    questions.forEach((q, i) => {
+    qList.forEach((q, i) => {
       const ans = q.correct_answer || "N/A";
       children.push(new Paragraph({ children: [new TextRun({ text: `Q${i + 1}: ${ans}`, size: 26 })] }));
     });
@@ -307,6 +297,7 @@ const PhysicalPaperModal = ({ isOpen, onClose, assessmentId, assessmentTitle }) 
   const handleSubmit = async () => {
     if (!assessmentId) return toast.error("No assessment selected");
     setLoading(true);
+
     try {
       const token = localStorage.getItem("token");
       const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
@@ -321,14 +312,18 @@ const PhysicalPaperModal = ({ isOpen, onClose, assessmentId, assessmentTitle }) 
         return;
       }
 
+      // LOCK QUESTIONS IN STATE + PASS TO GENERATOR
       setQuestions(q);
-      const blob = form.format === "pdf" ? await generatePDF() : await generateDOCX();
+      const blob = form.format === "pdf" 
+        ? await generatePDF(q) 
+        : await generateDOCX(q);
+
       saveAs(blob, `${assessmentTitle.replace(/\s+/g, "_")}_paper.${form.format}`);
-      toast.success("Generated successfully!");
+      toast.success("Paper generated successfully!");
       onClose();
     } catch (err) {
-      console.error(err);
-      toast.error("Failed to generate.");
+      console.error("Generation failed:", err);
+      toast.error("Failed to generate paper.");
     } finally {
       setLoading(false);
     }

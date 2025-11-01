@@ -1,10 +1,10 @@
-import { Link } from "react-router-dom"
-import useAuthStore from "../store/authStore.js"
+import { Link } from "react-router-dom";
+import useAuthStore from "../store/authStore.js";
 
 function Footer() {
-  const { user } = useAuthStore()
+  const { user } = useAuthStore();
 
-  const currentYear = new Date().getFullYear()
+  const currentYear = new Date().getFullYear();
 
   const getQuickLinks = () => {
     if (!user) {
@@ -13,7 +13,7 @@ function Footer() {
         { name: "Login", href: "/login" },
         { name: "Sign Up", href: "/signup" },
         { name: "Forgot Password", href: "/forgot-password" },
-      ]
+      ];
     }
 
     const baseLinks = [
@@ -27,28 +27,28 @@ function Footer() {
               : "/student/dashboard",
       },
       { name: "Profile", href: "/profile" },
-    ]
+    ];
 
     if (user.role === "instructor") {
-      baseLinks.push({ name: "Add Student", href: "/instructor/add-student" })
+      baseLinks.push({ name: "Add Student", href: "/instructor/add-student" });
     }
 
-    return baseLinks
-  }
+    return baseLinks;
+  };
 
   const supportLinks = [
     { name: "Help Center", href: "#" },
     { name: "Contact Support", href: "#" },
     { name: "Documentation", href: "#" },
     { name: "System Status", href: "#" },
-  ]
+  ];
 
   const companyLinks = [
     { name: "About Us", href: "#" },
     { name: "Privacy Policy", href: "#" },
     { name: "Terms of Service", href: "#" },
     { name: "Cookie Policy", href: "#" },
-  ]
+  ];
 
   return (
     <footer className="bg-gray-900 text-white">
@@ -57,7 +57,7 @@ function Footer() {
           {/* Company Info */}
           <div className="col-span-1 lg:col-span-1">
             <div className="flex items-center space-x-2 mb-4">
-              <div className="text-2xl">📚</div>
+              <div className="text-2xl">Gradewise AI</div>
               <span className="text-xl font-bold text-blue-400">Gradewise AI</span>
             </div>
             <p className="text-gray-400 mb-4 text-sm leading-relaxed">
@@ -67,19 +67,19 @@ function Footer() {
             <div className="flex space-x-4">
               <a href="#" className="text-gray-400 hover:text-blue-400 transition duration-200">
                 <span className="sr-only">Facebook</span>
-                <div className="text-xl">📘</div>
+                <div className="text-xl">Facebook</div>
               </a>
               <a href="#" className="text-gray-400 hover:text-blue-400 transition duration-200">
                 <span className="sr-only">Twitter</span>
-                <div className="text-xl">🐦</div>
+                <div className="text-xl">Twitter</div>
               </a>
               <a href="#" className="text-gray-400 hover:text-blue-400 transition duration-200">
                 <span className="sr-only">LinkedIn</span>
-                <div className="text-xl">💼</div>
+                <div className="text-xl">LinkedIn</div>
               </a>
               <a href="#" className="text-gray-400 hover:text-blue-400 transition duration-200">
                 <span className="sr-only">Email</span>
-                <div className="text-xl">📧</div>
+                <div className="text-xl">Email</div>
               </a>
             </div>
           </div>
@@ -134,7 +134,7 @@ function Footer() {
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center space-x-3 mb-3 sm:mb-0">
                   <div className="text-2xl">
-                    {user.role === "admin" ? "👑" : user.role === "instructor" ? "👨‍🏫" : "👨‍🎓"}
+                    {user.role === "admin" ? "Admin" : user.role === "instructor" ? "Instructor" : "Student"}
                   </div>
                   <div>
                     <div className="font-medium text-white">{user.name}</div>
@@ -155,19 +155,45 @@ function Footer() {
         {/* Bottom Section */}
         <div className="border-t border-gray-800 mt-8 pt-8">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between">
-            <div className="text-sm text-gray-400 mb-4 md:mb-0">© {currentYear} Gradewise AI. All rights reserved.</div>
-            <div className="flex flex-wrap items-center space-x-6">
-              <span className="text-sm text-gray-400">Made with ❤️ for educators</span>
-              <div className="flex items-center space-x-2">
+            <div className="text-sm text-gray-400 mb-4 md:mb-0">
+              © {currentYear} Gradewise AI. All rights reserved.
+            </div>
+            <div className="flex flex-col sm:flex-row items-center gap-4 text-xs text-gray-400">
+              <span>Made with love for educators</span>
+              <span className="hidden sm:inline">•</span>
+              <div className="flex items-center gap-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                <span className="text-sm text-gray-400">System Status: All systems operational</span>
+                <span>System Status: All systems operational</span>
               </div>
             </div>
           </div>
+
+          {/* reCAPTCHA Legal Notice (Google Policy) */}
+          <p className="text-xs text-gray-500 mt-6 text-center">
+            This site is protected by reCAPTCHA and the Google{" "}
+            <a
+              href="https://policies.google.com/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-gray-300"
+            >
+              Privacy Policy
+            </a>{" "}
+            and{" "}
+            <a
+              href="https://policies.google.com/terms"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-gray-300"
+            >
+              Terms of Service
+            </a>{" "}
+            apply.
+          </p>
         </div>
       </div>
     </footer>
-  )
+  );
 }
 
-export default Footer
+export default Footer;

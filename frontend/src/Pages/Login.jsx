@@ -1,4 +1,5 @@
-import { useState } from "react";
+// src/Pages/Login.jsx
+import { useState, useEffect } from "react"; // ← ADD useEffect
 import { Link, useNavigate } from "react-router-dom";
 import { z } from "zod";
 import useAuthStore from "../store/authStore.js";
@@ -9,8 +10,9 @@ import Navbar from "../components/Navbar.jsx";
 import Footer from "../components/Footer.jsx";
 import toast from "react-hot-toast";
 import axios from "axios";
+import { loadRecaptcha, getCaptchaToken } from "../config/captcha.js"; // ← v3
 
-// Zod schema for login validation
+// Zod schema
 const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
   password: z.string().min(1, "Password is required"),
@@ -20,23 +22,24 @@ function Login() {
   const navigate = useNavigate();
   const { login, googleAuth } = useAuthStore();
 
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-  });
-
+  const [formData, setFormData] = useState({ email: "", password: "" });
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [modal, setModal] = useState({ isOpen: false, type: "info", title: "", message: "" });
 
+  const siteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
+
+  useEffect(() => {
+    if (siteKey) {
+      loadRecaptcha(siteKey).catch(console.error);
+    }
+  }, [siteKey]);
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
-    // Clear error when user starts typing
-    if (errors[name]) {
-      setErrors((prev) => ({ ...prev, [name]: "" }));
-    }
+    if (errors[name]) setErrors((prev) => ({ ...prev, [name]: "" }));
   };
 
   const showModal = (type, title, message) => {
@@ -69,18 +72,18 @@ function Login() {
     setErrors({});
 
     try {
-      // Validate form data
       loginSchema.parse(formData);
 
-      // Attempt login
-      const response = await login(formData);
-      const token = useAuthStore.getState().token; // Get token from store state
-      localStorage.setItem("token", token); // Store token correctly
+      // Get invisible CAPTCHA token
+      const captchaToken = await getCaptchaToken(siteKey, "login");
+
+      const response = await login({ ...formData, captchaToken });
+      const token = useAuthStore.getState().token;
+      localStorage.setItem("token", token);
       axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-      console.log("✅ Login successful, token set:", token.slice(0, 10) + "...");
+      console.log("Login successful, token set:", token.slice(0, 10) + "...");
       showModal("success", "Login Successful!", `Welcome back, ${response.name}!`);
 
-      // Redirect based on role after a short delay
       setTimeout(() => {
         redirectUser(response);
       }, 1500);
@@ -104,13 +107,12 @@ function Login() {
     setGoogleLoading(true);
     try {
       const response = await googleAuth();
-      const token = useAuthStore.getState().token; // Get token from store state
-      localStorage.setItem("token", token); // Store token correctly
+      const token = useAuthStore.getState().token;
+      localStorage.setItem("token", token);
       axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-      console.log("✅ Google login successful, token set:", token.slice(0, 10) + "...");
+      console.log("Google login successful, token set:", token.slice(0, 10) + "...");
       showModal("success", "Welcome!", `Successfully signed in with Google! Welcome back, ${response.name}!`);
 
-      // Redirect based on role after a short delay
       setTimeout(() => {
         redirectUser(response);
       }, 1500);
@@ -140,7 +142,7 @@ function Login() {
             <button
               onClick={handleGoogleLogin}
               disabled={googleLoading || loading}
-              className="w-full flex items-center justify-center px-4 py-3 border border-gray-300 rounded-md shadow-sm bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed mb-6"
+              className="w-full flex items-center justify-center px-4 py-4 border border-gray-300 rounded-md shadow-sm bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed mb-6"
             >
               {googleLoading ? (
                 <LoadingSpinner size="sm" />
@@ -178,7 +180,6 @@ function Login() {
               </div>
             </div>
 
-            {/* Manual Login Form */}
             <form onSubmit={handleSubmit} className="space-y-6">
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
@@ -215,14 +216,6 @@ function Login() {
                   placeholder="Enter your password"
                 />
                 {errors.password && <p className="mt-1 text-sm text-red-600">{errors.password}</p>}
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="text-sm">
-                  <Link to="/forgot-password" className="font-medium text-blue-600 hover:text-blue-500">
-                    Forgot your password?
-                  </Link>
-                </div>
               </div>
 
               <button

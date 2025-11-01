@@ -1,7 +1,6 @@
+// routes/resourceRoutes.js
 import express from "express";
 import multer from "multer";
-import path from "path";
-import fs from "fs/promises";
 import {
   uploadResource,
   getInstructorResources,
@@ -17,53 +16,25 @@ import { protect, authorizeRoles } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-// Create uploads directory if it doesn't exist
-const uploadsDir = "uploads/assessments";
-const ensureUploadsDir = async () => {
-  try {
-    await fs.mkdir(uploadsDir, { recursive: true });
-    console.log(`✅ Uploads directory ensured at: ${uploadsDir}`);
-  } catch (error) {
-    console.error("❌ Error creating uploads directory:", error);
-  }
-};
-ensureUploadsDir();
-
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadsDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname));
-  },
-});
-
-const fileFilter = (req, file, cb) => {
-  const allowedTypes = [
-    "application/pdf",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "text/plain",
-  ];
-  if (allowedTypes.includes(file.mimetype)) {
-    cb(null, true);
-  } else {
-    cb(new Error("Invalid file type. Only PDF, DOC, DOCX, TXT files are allowed."), false);
-  }
-};
-
+// IN-MEMORY ONLY → NO DISK, NO FOLDER
 const upload = multer({
-  storage: storage,
-  fileFilter: fileFilter,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => {
+    const allowed = [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "text/plain",
+    ];
+    allowed.includes(file.mimetype) ? cb(null, true) : cb(new Error("Invalid file type"), false);
+  },
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
 });
 
 /**
  * @route   POST /api/resources
- * @desc    Upload a new resource file or URL
- * @access  Private (Instructor, Admin, Super Admin)
+ * @desc    Upload a new resource (in-memory)
+ * @access  Private
  */
 router.post(
   "/",
@@ -75,8 +46,7 @@ router.post(
 
 /**
  * @route   GET /api/resources
- * @desc    Get resources uploaded by the authenticated instructor
- * @access  Private (Instructor, Admin, Super Admin)
+ * @desc    Get instructor's resources
  */
 router.get(
   "/",
@@ -87,8 +57,7 @@ router.get(
 
 /**
  * @route   GET /api/resources/all
- * @desc    Get all file-based resources in the system
- * @access  Private (Instructor, Admin, Super Admin)
+ * @desc    Get all file-based resources
  */
 router.get(
   "/all",
@@ -99,8 +68,6 @@ router.get(
 
 /**
  * @route   GET /api/resources/:resourceId
- * @desc    Get a specific resource by ID
- * @access  Private (Resource owner, Admin, Super Admin)
  */
 router.get(
   "/:resourceId",
@@ -111,8 +78,6 @@ router.get(
 
 /**
  * @route   PUT /api/resources/:resourceId
- * @desc    Update a resource
- * @access  Private (Resource owner, Admin, Super Admin)
  */
 router.put(
   "/:resourceId",
@@ -123,8 +88,6 @@ router.put(
 
 /**
  * @route   DELETE /api/resources/:resourceId
- * @desc    Delete a resource
- * @access  Private (Resource owner, Admin, Super Admin)
  */
 router.delete(
   "/:resourceId",
@@ -135,8 +98,6 @@ router.delete(
 
 /**
  * @route   POST /api/resources/:resourceId/assessments/:assessmentId
- * @desc    Link a resource to an assessment
- * @access  Private (Assessment owner, Admin, Super Admin)
  */
 router.post(
   "/:resourceId/assessments/:assessmentId",
@@ -147,8 +108,6 @@ router.post(
 
 /**
  * @route   GET /api/resources/assessments/:assessmentId
- * @desc    Get resources linked to an assessment
- * @access  Private (Assessment owner, Admin, Super Admin)
  */
 router.get(
   "/assessments/:assessmentId",
@@ -159,8 +118,6 @@ router.get(
 
 /**
  * @route   DELETE /api/resources/:resourceId/assessments/:assessmentId
- * @desc    Unlink a resource from an assessment
- * @access  Private (Assessment owner, Admin, Super Admin)
  */
 router.delete(
   "/:resourceId/assessments/:assessmentId",
