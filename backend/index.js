@@ -1,4 +1,3 @@
-// server.js
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -15,6 +14,7 @@ import studentAnalyticsRoutes from "./routes/studentAnalyticsRoutes.js";
 import takingRoutes from "./routes/takingRoutes.js";
 import instructorAssessmentAnalyticsRoutes from "./routes/instructorAssessmentAnalyticsRoutes.js";
 import { errorHandler, notFound } from "./middleware/errorMiddleware.js";
+
 // FIXED: Simple & safe .env loading
 dotenv.config(); // ← AUTO FINDS .env IN ROOT
 
@@ -106,7 +106,17 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// 404 & Error
+// NEW: Root route to avoid "Route / not found"
+app.get("/", (req, res) => {
+  res.json({
+    success: true,
+    message: "Welcome to Gradewise AI Backend",
+    health: "/api/health",
+    docs: "Use /api/* for all endpoints",
+  });
+});
+
+// 404 & Error (must be AFTER all routes)
 app.use(notFound);
 app.use(errorHandler);
 
